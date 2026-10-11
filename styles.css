@@ -19,6 +19,9 @@
     font-family: 'Inter', sans-serif;
 }
 
+/* hidden 속성은 CSS display보다 우선해 확실히 숨김 */
+[hidden] { display: none !important; }
+
 body {
     background-color: var(--bg-dark);
     color: var(--text-main);
@@ -877,13 +880,11 @@ header {
 .pie-leg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pie-leg-pct { color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
 .pie-leg-val { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; min-width: 72px; }
-.pie-leg-krw { color: var(--text-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; text-align: right; min-width: 92px; }
+.pie-leg-krw { color: var(--text-main); font-size: 0.72rem; font-variant-numeric: tabular-nums; text-align: right; min-width: 92px; }
 .pie-leg-krw:empty { display: none; }
-/* 평가금액 색: 종목 손익 부호(표의 평가손익과 동일) */
+/* 평가금액(USD) 색: 종목 손익 부호(표의 평가손익과 동일). 원화는 흰색 유지 */
 .pie-leg-val.positive { color: var(--positive); }
 .pie-leg-val.negative { color: var(--negative); }
-.pie-leg-krw.positive { color: var(--positive); opacity: 0.8; }
-.pie-leg-krw.negative { color: var(--negative); opacity: 0.8; }
 
 /* ===== 계좌 요약(2×2) + 평가금액 비중 나란히 ===== */
 .kis-overview {
@@ -940,4 +941,49 @@ header {
     white-space: nowrap;
     pointer-events: none;
     z-index: 2;
+}
+
+/* ===== 리밸런싱 패널 ===== */
+.view-toggle button.active { background: rgba(139,92,246,0.18); color: var(--accent-purple); }
+
+.rebalance-panel { display: flex; flex-direction: column; min-height: 0; }
+.rb-controls {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem;
+    margin-bottom: 0.9rem;
+}
+.rb-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+    color: var(--text-main); font-size: 0.8rem; font-weight: 600;
+    padding: 0.4rem 0.8rem; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;
+}
+.rb-btn:hover { background: rgba(139,92,246,0.14); color: var(--accent-purple); border-color: rgba(139,92,246,0.3); }
+.rb-sum { font-size: 0.85rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 6px; }
+.rb-sum.ok { color: var(--positive); background: rgba(16,185,129,0.12); }
+.rb-sum.warn { color: var(--accent-orange); background: rgba(245,158,11,0.12); }
+.rb-note { font-size: 0.72rem; color: var(--text-muted); margin-left: auto; }
+
+.rebalance-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.rebalance-table th, .rebalance-table td {
+    padding: 0.55rem 0.7rem; text-align: left; border-bottom: 1px solid var(--glass-border);
+    font-size: 0.88rem; white-space: nowrap;
+}
+.rebalance-table th { color: var(--text-muted); font-weight: 500; font-size: 0.8rem; }
+.rebalance-table td.num, .rebalance-table th.num { text-align: right; }
+.rebalance-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+.rebalance-table tbody tr:last-child td { border-bottom: none; }
+.rb-buy { color: var(--positive); }
+.rb-sell { color: var(--negative); }
+
+.rb-input {
+    width: 72px; text-align: right;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+    color: var(--text-main); border-radius: 6px; padding: 0.25rem 0.4rem;
+    font-size: 0.85rem; font-variant-numeric: tabular-nums;
+}
+.rb-input:focus { outline: none; border-color: var(--accent-purple); }
+
+/* 울트라와이드: 우측 영역을 채우고 내부 스크롤 */
+@media (min-width: 1700px) {
+    .holdings-charts .rebalance-panel { flex: 1; min-height: 0; }
+    .holdings-charts .rebalance-panel .table-wrap { flex: 1; min-height: 0; overflow: auto; max-height: none; }
 }

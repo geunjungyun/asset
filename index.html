@@ -151,8 +151,12 @@
             <!-- 보유종목 전체 차트 -->
             <section class="holdings-charts glass-effect">
                 <div class="section-head">
-                    <h2><i class="fa-solid fa-chart-line"></i> 보유종목 차트</h2>
+                    <h2><i class="fa-solid fa-chart-line"></i> <span id="right-title">보유종목 차트</span></h2>
                     <div class="section-actions">
+                        <div class="period-toggle view-toggle" id="right-view-toggle">
+                            <button data-view="charts" class="active">차트</button>
+                            <button data-view="rebalance">리밸런싱</button>
+                        </div>
                         <div class="period-toggle" id="hd-period-toggle">
                             <button data-period="1D" class="active">1일</button>
                             <button data-period="2D">2일</button>
@@ -170,6 +174,33 @@
                 </div>
                 <div class="hc-grid" id="holdings-charts-grid">
                     <div class="loading-row">차트를 불러오는 중...</div>
+                </div>
+
+                <!-- 리밸런싱 패널 -->
+                <div class="rebalance-panel" id="rebalance-panel" hidden>
+                    <div class="rb-controls">
+                        <button class="rb-btn" id="rb-equal">균등 배분</button>
+                        <button class="rb-btn" id="rb-current">현재 비중</button>
+                        <button class="rb-btn" id="rb-normalize">100% 정규화</button>
+                        <span class="rb-sum" id="rb-sum"></span>
+                        <span class="rb-note">목표 비중(%)을 입력하면 매수/매도 수량을 계산합니다 · 주식 평가금액 기준 · 정수 주</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="rebalance-table">
+                            <thead>
+                                <tr>
+                                    <th>종목</th>
+                                    <th class="num">현재 비중</th>
+                                    <th class="num">목표 비중(%)</th>
+                                    <th class="num">목표 금액</th>
+                                    <th class="num">조정(매수+/매도−)</th>
+                                    <th class="num">조정 수량</th>
+                                    <th class="num">조정 후 비중</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rebalance-body"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 

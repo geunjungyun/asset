@@ -318,13 +318,14 @@ async def get_stock_chart(code: str, period: str) -> dict:
     if not pts:
         return _mock_stock_chart(code, period, fmt)
 
-    # 장중(1~5일)은 최근 N일로 필터 + 다운샘플
+    # 장중(1~5일)은 (가용 데이터의) 최근 N일로 필터 + 다운샘플 — 최신 봉 기준
     if period in STOCK_DAY_FILTER:
-        import time as _t
-        cut = _t.time() - STOCK_DAY_FILTER[period] * 86400
-        f = [(t, c) for t, c in pts if t is not None and t >= cut]
-        if len(f) >= 2:
-            pts = f
+        ref = pts[-1][0] if pts and pts[-1][0] else None
+        if ref:
+            cut = ref - STOCK_DAY_FILTER[period] * 86400
+            f = [(t, c) for t, c in pts if t is not None and t >= cut]
+            if len(f) >= 2:
+                pts = f
         if len(pts) > 300:
             pts = pts[:: (len(pts) // 300) or 1]
 

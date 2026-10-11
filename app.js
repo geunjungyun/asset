@@ -234,7 +234,7 @@ function renderHoldingsPie(holdings) {
         <text x="${cx}" y="${cy + 4}" text-anchor="middle"
             fill="${totalColor}" font-size="15" font-weight="700">${money(total)}</text>
         ${krwLine ? `<text x="${cx}" y="${cy + 20}" text-anchor="middle"
-            fill="${totalColor}" font-size="9.5" opacity="0.8">${krwLine}</text>` : ''}`;
+            fill="var(--text-main)" font-size="9.5">${krwLine}</text>` : ''}`;
     svg.innerHTML = paths + center;
 
     // 평가금액 색: 해당 종목 손익 부호(초록/빨강) — 표의 평가손익과 동일
@@ -246,7 +246,7 @@ function renderHoldingsPie(holdings) {
             <span class="pie-leg-name">${x.name}</span>
             <span class="pie-leg-pct">${x.pct.toFixed(1)}%</span>
             <span class="pie-leg-val ${cls}">${money(x.val)}</span>
-            <span class="pie-leg-krw ${cls}">${krwStr(x.val)}</span>
+            <span class="pie-leg-krw">${krwStr(x.val)}</span>
         </div>`;
     }).join('');
 }
@@ -315,6 +315,108 @@ function scheduleHoldingRefresh() {
         holdingTimer = setInterval(() => {
             if (!document.hidden) loadHoldingsCharts();
         }, 30000);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 리밸런싱 (목표 비중 → 조정 수량)
+// ---------------------------------------------------------------------------
+const RB_KEY = 'assetpro.targetWeights';
+let targetWeights = {};
+try { targetWeights = JSON.parse(localStorage.getItem(RB_KEY) || '{}') || {}; } catch (_) { targetWeights = {}; }
+function saveTargets() { try { localStorage.setItem(RB_KEY, JSON.stringify(targetWeights)); } catch (_) {} }
+
+let rightView = 'charts';
+
+function initRebalance() {
+    const vt = document.getElementById('right-view-toggle');
+    if (vt) vt.addEventListener('click', (e) => {
+        const btn = e.target.closest('button'); if (!btn) return;
+        vt.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        rightView = btn.dataset.view;
+        const charts = rightView === 'charts';
+        document.getElementById('holdings-charts-grid').hidden = !charts;
+        document.getElementById('rebalance-panel').hidden = charts;
+        document.getElementById('hd-period-toggle').style.display = charts ? '' : 'none';
+        document.getElementById('right-title').textContent = charts ? '보유종목 차트' : '목표 비중 & 리밸런싱';
+        if (!charts) renderRebalance();
+    });
+
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+    on('rb-equal', () => {
+        const codes = (holdingsList || []).map(h => h.code);
+        const w = codes.length ? Math.round(10000 / codes.length) / 100 : 0;
+        codes.forEach(c => targetWeights[c] = w);
+        saveTargets(); renderRebalance();
+    });
+    on('rb-current', () => {
+        const total = (holdingsList || []).reduce((s, h) => s + (Number(h.eval_amount) || 0), 0);
+        (holdingsList || []).forEach(h => targetWeights[h.code] = total ? Math.round((h.eval_amount / total * 100) * 100) / 100 : 0);
+        saveTargets(); renderRebalance();
+    });
+    on('rb-normalize', () => {
+        const codes = (holdingsList || []).map(h => h.code);
+        const sum = codes.reduce((s, c) => s + (Number(targetWeights[c]) || 0), 0);
+        if (sum > 0) codes.forEach(c => targetWeights[c] = Math.round(((Number(targetWeights[c]) || 0) / sum * 100) * 100) / 100);
+        saveTargets(); renderRebalance();
+    });
+}
+
+function renderRebalance() {
+    const body = document.getElementById('rebalance-body');
+    if (!body) return;
+    const holds = holdingsList || [];
+    const cur = accountCurrency;
+    const total = holds.reduce((s, h) => s + (Number(h.eval_amount) || 0), 0);
+
+    if (!holds.length || total <= 0) {
+        body.innerHTML = '<tr><td colspan="7" class="loading-row">보유 종목이 없습니다.</td></tr>';
+        return;
+    }
+    // 목표비중 미설정 → 현재비중 기본
+    holds.forEach(h => {
+        if (targetWeights[h.code] === undefined)
+            targetWeights[h.code] = Math.round((h.eval_amount / total * 100) * 100) / 100;
+    });
+
+    const rows = holds.map(h => {
+        const price = Number(h.current_price) || 0, evalAmt = Number(h.eval_amount) || 0;
+        const curW = evalAmt / total * 100;
+        const tgtW = Number(targetWeights[h.code]) || 0;
+        const tgtAmt = tgtW / 100 * total;
+        const diff = tgtAmt - evalAmt;
+        const qty = price ? Math.round(diff / price) : 0;   // 정수 주
+        const newEval = evalAmt + qty * price;
+        return { code: h.code, name: h.name, evalAmt, curW, tgtW, tgtAmt, diff, qty, newEval };
+    });
+    const newTotal = rows.reduce((s, r) => s + r.newEval, 0) || total;
+
+    body.innerHTML = rows.map(r => {
+        const buy = r.diff >= 0, bc = buy ? 'rb-buy' : 'rb-sell';
+        return `<tr>
+            <td><div class="stock-name">${r.name}</div><div class="stock-code">${r.code}</div></td>
+            <td class="num">${r.curW.toFixed(1)}%</td>
+            <td class="num"><input class="rb-input" type="number" step="0.1" min="0" inputmode="decimal" data-code="${r.code}" value="${r.tgtW}"></td>
+            <td class="num">${money(r.tgtAmt, cur)}</td>
+            <td class="num ${bc}">${buy ? '+' : '−'}${money(Math.abs(r.diff), cur)}</td>
+            <td class="num ${bc}">${r.qty >= 0 ? '+' : '−'}${Math.abs(r.qty).toLocaleString('ko-KR')}주</td>
+            <td class="num">${(r.newEval / newTotal * 100).toFixed(1)}%</td>
+        </tr>`;
+    }).join('');
+
+    body.querySelectorAll('.rb-input').forEach(inp => {
+        inp.addEventListener('change', () => {
+            targetWeights[inp.dataset.code] = Math.max(0, Number(inp.value) || 0);
+            saveTargets(); renderRebalance();
+        });
+    });
+
+    const sum = rows.reduce((s, r) => s + r.tgtW, 0);
+    const sumEl = document.getElementById('rb-sum');
+    if (sumEl) {
+        sumEl.textContent = `목표 합계 ${sum.toFixed(1)}%`;
+        sumEl.className = 'rb-sum ' + (Math.abs(sum - 100) < 0.05 ? 'ok' : 'warn');
     }
 }
 
@@ -684,6 +786,7 @@ async function loadAll() {
 document.addEventListener('DOMContentLoaded', () => {
     initPeriodToggle();
     initHoldingToggle();
+    initRebalance();
     loadAll();
     connectStream();  // KIS 실시간 tick (SSE)
     document.getElementById('refresh-btn').addEventListener('click', loadAll);
