@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>내 자산 관리 대시보드</title>
+    <meta name="description" content="모던한 자산 관리 서비스 대시보드">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-wallet"></i>
+                <h2>AssetPro</h2>
+            </div>
+            <nav>
+                <ul>
+                    <li class="active"><a href="#"><i class="fa-solid fa-house"></i> 대시보드</a></li>
+                    <li><a href="#"><i class="fa-solid fa-chart-pie"></i> 포트폴리오</a></li>
+                    <li><a href="#"><i class="fa-solid fa-arrow-right-arrow-left"></i> 입출금 내역</a></li>
+                    <li><a href="#"><i class="fa-solid fa-gear"></i> 설정</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <!-- 지표 그래프 (시간 단위 설정 포함) -->
+            <section class="market-charts-section glass-effect">
+                <div class="section-head">
+                    <h2>
+                        <i class="fa-solid fa-chart-area"></i> 지표 그래프
+                        <span class="live-dot" id="live-dot" title="실시간(약 15분 지연) 자동 갱신"></span>
+                    </h2>
+                    <div class="section-actions">
+                        <div class="period-toggle" id="period-toggle">
+                            <button data-period="1D" class="active">1일</button>
+                            <button data-period="2D">2일</button>
+                            <button data-period="3D">3일</button>
+                            <button data-period="4D">4일</button>
+                            <button data-period="5D">5일</button>
+                            <button data-period="1W">1주</button>
+                            <button data-period="1M">1개월</button>
+                            <button data-period="3M">3개월</button>
+                            <button data-period="6M">6개월</button>
+                            <button data-period="1Y">1년</button>
+                            <button data-period="5Y">5년</button>
+                        </div>
+                        <span class="updated-at" id="market-updated"></span>
+                        <div class="user-profile">
+                            <img src="https://i.pravatar.cc/150?img=11" alt="프로필 이미지">
+                        </div>
+                    </div>
+                </div>
+                <div class="market-charts-grid" id="market-charts-grid">
+                    <div class="loading-row">그래프를 불러오는 중...</div>
+                </div>
+            </section>
+
+            <!-- 메리츠증권 계좌 -->
+            <section class="kis-section glass-effect">
+                <div class="section-head">
+                    <h2><i class="fa-solid fa-building-columns"></i> 메리츠증권 계좌</h2>
+
+                    <!-- 총자산 / 예수금 / 주식 평가금액 -->
+                    <div class="header-assets">
+                        <div class="ha-item">
+                            <span class="ha-label"><i class="fa-solid fa-won-sign blue"></i> 총 자산</span>
+                            <span class="ha-value" id="total-asset">-</span>
+                            <span class="ha-krw" id="total-asset-krw"></span>
+                        </div>
+                        <div class="ha-item">
+                            <span class="ha-label"><i class="fa-solid fa-piggy-bank purple"></i> 예수금</span>
+                            <span class="ha-value" id="cash-asset">-</span>
+                            <span class="ha-krw" id="cash-asset-krw"></span>
+                        </div>
+                        <div class="ha-item">
+                            <span class="ha-label"><i class="fa-solid fa-chart-line orange"></i> 주식 평가금액</span>
+                            <span class="ha-value">
+                                <span id="invest-asset">-</span>
+                                <span class="trend" id="invest-trend"></span>
+                            </span>
+                            <span class="ha-krw" id="invest-asset-krw"></span>
+                        </div>
+                    </div>
+
+                    <div class="section-actions">
+                        <span class="updated-at" id="updated-at"></span>
+                        <button class="refresh-btn" id="refresh-btn" title="새로고침">
+                            <i class="fa-solid fa-rotate-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="kis-overview">
+                <div class="kis-summary" id="kis-summary">
+                    <div class="kis-stat">
+                        <span class="label">매입금액</span>
+                        <span class="value" id="sum-purchase">-</span>
+                        <span class="krw-sub" id="sum-purchase-krw"></span>
+                    </div>
+                    <div class="kis-stat">
+                        <span class="label">평가금액</span>
+                        <span class="value" id="sum-eval">-</span>
+                        <span class="krw-sub" id="sum-eval-krw"></span>
+                    </div>
+                    <div class="kis-stat">
+                        <span class="label">평가손익</span>
+                        <span class="value" id="sum-pnl">-</span>
+                        <span class="krw-sub" id="sum-pnl-krw"></span>
+                    </div>
+                    <div class="kis-stat">
+                        <span class="label">수익률</span>
+                        <span class="value" id="sum-rate">-</span>
+                    </div>
+                </div>
+
+                <!-- 종목별 평가금액 비중 (파이/도넛) -->
+                <div class="pie-section">
+                    <h3 class="pie-title"><i class="fa-solid fa-chart-pie"></i> 평가금액 비중</h3>
+                    <div class="pie-body">
+                        <svg class="pie-svg" id="holdings-pie" viewBox="0 0 220 220" aria-label="평가금액 비중"></svg>
+                        <div class="pie-legend" id="holdings-pie-legend"></div>
+                    </div>
+                </div>
+                </div><!-- /.kis-overview -->
+
+                <div class="table-wrap">
+                    <table class="holdings-table">
+                        <thead>
+                            <tr>
+                                <th>종목</th>
+                                <th class="num">보유수량</th>
+                                <th class="num">매입평균가</th>
+                                <th class="num">현재가</th>
+                                <th class="num">평가금액</th>
+                                <th class="num">평가손익</th>
+                                <th class="num">수익률</th>
+                            </tr>
+                        </thead>
+                        <tbody id="holdings-body">
+                            <tr><td colspan="7" class="loading-row">보유종목을 불러오는 중...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+            </section>
+
+            <!-- 보유종목 전체 차트 -->
+            <section class="holdings-charts glass-effect">
+                <div class="section-head">
+                    <h2><i class="fa-solid fa-chart-line"></i> 보유종목 차트</h2>
+                    <div class="section-actions">
+                        <div class="period-toggle" id="hd-period-toggle">
+                            <button data-period="1D" class="active">1일</button>
+                            <button data-period="2D">2일</button>
+                            <button data-period="3D">3일</button>
+                            <button data-period="4D">4일</button>
+                            <button data-period="5D">5일</button>
+                            <button data-period="1W">1주</button>
+                            <button data-period="1M">1개월</button>
+                            <button data-period="3M">3개월</button>
+                            <button data-period="6M">6개월</button>
+                            <button data-period="1Y">1년</button>
+                            <button data-period="5Y">5년</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="hc-grid" id="holdings-charts-grid">
+                    <div class="loading-row">차트를 불러오는 중...</div>
+                </div>
+            </section>
+
+            <div class="dashboard-grid">
+                <section class="chart-section glass-effect">
+                    <h2>자산 추이</h2>
+                    <div class="chart-placeholder">
+                        <div class="bar" style="height: 40%"><span>4월</span></div>
+                        <div class="bar" style="height: 55%"><span>5월</span></div>
+                        <div class="bar" style="height: 50%"><span>6월</span></div>
+                        <div class="bar" style="height: 70%"><span>7월</span></div>
+                        <div class="bar" style="height: 85%"><span>8월</span></div>
+                    </div>
+                </section>
+
+                <section class="recent-transactions glass-effect">
+                    <h2>최근 내역</h2>
+                    <ul class="transaction-list" id="transaction-list"></ul>
+                </section>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
