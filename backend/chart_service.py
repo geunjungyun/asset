@@ -118,11 +118,15 @@ async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_
 
 
 def _prev_session_close(symbol: str) -> float | None:
-    """오늘(KST) 이전의 가장 최근 일봉 종가 = 전일 정규장 마감가."""
-    now_kst = datetime.now(KST)
-    today_midnight = int(now_kst.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    """현재 장중 세션(가장 최근 09:00 시작)의 '이전 거래일' 일봉 종가 = 전일 종가.
+
+    KST 자정이 아니라 09:00 세션 시작 '날짜'를 기준으로 비교한다. 미국 야간장이
+    KST 자정을 넘겨 진행돼도 세션 도중에 기준이 바뀌지 않고, 매일 09:00에만 리셋된다.
+    (자정 기준이면 세션 도중 전일종가가 바뀌어 등락율이 ~24시간 기준으로 틀어짐)
+    """
+    anchor_date = datetime.fromtimestamp(_recent_9am_ts(), KST).date()
     for ts, close, *_ in reversed(store.get_candles(symbol, "1d")):
-        if ts < today_midnight and close:
+        if close and datetime.fromtimestamp(ts, KST).date() < anchor_date:
             return close
     return None
 
