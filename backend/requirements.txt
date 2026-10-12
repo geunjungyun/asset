@@ -1,5 +1,13 @@
+# 서버 구동에 필요한 최소 의존성 (모두 순수 파이썬 또는 범용 wheel → 컴파일러 불필요)
 fastapi>=0.111
-uvicorn[standard]>=0.30
+uvicorn>=0.30
 httpx>=0.27
 python-dotenv>=1.0
-websockets>=12.0
+
+# (선택) KIS 실시간 WebSocket(해외선물/환율 실시간)을 쓸 때만 설치:
+#   pip install websockets
+# 현재 기본 구성(메리츠 계좌/차트 + Yahoo 지표)에서는 불필요.
+#
+# 참고: uvicorn[standard] 는 pyyaml/httptools/watchfiles 를 끌어와
+#       최신 파이썬(wheel 미제공 시)에서 C 컴파일이 필요해질 수 있어 제외했다.
+#       --reload 는 standard 없이도 동작한다.
