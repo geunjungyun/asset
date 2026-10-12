@@ -25,7 +25,8 @@ from fastapi.staticfiles import StaticFiles
 
 import kis_client
 import market
-from config import settings
+import meritz_client
+from config import settings, meritz_settings
 from kis_ws import engine
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent
@@ -59,24 +60,47 @@ async def no_cache(request, call_next):
 
 @app.get("/api/health")
 async def health() -> dict:
+    live = meritz_settings.enabled or (not settings.use_mock)
     return {
         "status": "ok",
-        "mode": "mock" if settings.use_mock else "live",
+        "mode": "live" if live else "mock",
+        "broker": "meritz" if meritz_settings.enabled else ("kis" if not settings.use_mock else "none"),
         "env": settings.env,
     }
 
 
 @app.get("/api/account/status")
 async def account_status() -> JSONResponse:
-    """계좌 요약 + 보유종목. KIS 호출 실패 시 mock으로 폴백하고 경고를 붙인다."""
+    """계좌 요약 + 보유종목. 메리츠 우선, 실패 시 mock 폴백(경고 포함)."""
+    # 1) 메리츠 실계좌(앱키 있으면)
+    if meritz_settings.enabled:
+        try:
+            return JSONResponse(await meritz_client.get_balance())
+        except meritz_client.MeritzError as exc:
+            fallback = kis_client.mock_balance()
+            fallback["warning"] = f"메리츠 연동 실패로 예시 데이터를 표시합니다: {exc}"
+            return JSONResponse(fallback)
+
+    # 2) KIS(설정된 경우) 또는 mock
     try:
-        data = await kis_client.inquire_balance()
-        return JSONResponse(data)
+        return JSONResponse(await kis_client.inquire_balance())
     except kis_client.KisError as exc:
         fallback = kis_client.mock_balance()
         fallback["mode"] = "mock"
         fallback["warning"] = f"KIS 연동 실패로 mock 데이터를 표시합니다: {exc}"
         return JSONResponse(fallback)
+
+
+@app.get("/api/account/domestic")
+async def account_domestic() -> JSONResponse:
+    """국내(원화) 보유종목만. 메리츠 미설정/실패 시 빈 목록."""
+    if not meritz_settings.enabled:
+        return JSONResponse({"mode": "mock", "currency": "KRW", "holdings": [], "summary": {}})
+    try:
+        return JSONResponse(await meritz_client.get_domestic_balance())
+    except meritz_client.MeritzError as exc:
+        return JSONResponse({"mode": "mock", "currency": "KRW", "holdings": [],
+                             "summary": {}, "warning": f"국내 계좌 조회 실패: {exc}"})
 
 
 @app.get("/api/transactions")
@@ -110,6 +134,24 @@ async def holdings_charts(period: str = "realtime") -> dict:
 async def market_status() -> dict:
     """시장 지표 스냅샷. 금리는 Yahoo 실데이터, 유가/환율은 KIS 실시간이 덮어씀."""
     return await market.get_market()
+
+
+@app.get("/api/sectors")
+async def sectors_status() -> dict:
+    """11개 GICS 섹터(SPDR ETF)의 기간별 추이. 섹터별 주/월 모니터링용."""
+    return await market.get_sectors()
+
+
+@app.get("/api/sectors/{key}/members")
+async def sector_members(key: str, period: str = "1W") -> dict:
+    """특정 섹터의 대표 구성종목 드릴다운(기간별 등락률). 펼칠 때만 호출."""
+    return await market.get_sector_members(key, period)
+
+
+@app.get("/api/sectors/{key}/momentum")
+async def sector_momentum(key: str) -> dict:
+    """섹터 구성종목의 1주/1개월/3개월 수익률 + 모멘텀 점수·가속. 갈아타기 판단용."""
+    return await market.get_sector_momentum(key)
 
 
 def _sse(payload: dict) -> str:

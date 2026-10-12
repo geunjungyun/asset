@@ -801,7 +801,7 @@ header {
     .market-charts-section .section-head { margin-bottom: 0.35rem; }
     .market-charts-section .section-head h2 { font-size: 0.95rem; }
     .market-charts-grid { flex: 1; min-height: 0; overflow: auto; align-content: start;
-        display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.7rem; }
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.7rem; }
     .mchart-card { background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border);
         border-radius: 12px; padding: 0.5rem 0.7rem 0.4rem; }
     .mchart-top { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; }
@@ -942,9 +942,55 @@ header {
     pointer-events: none;
     z-index: 2;
 }
+/* 기준선 종류별 색: 평단(회색)·목표(초록)·손절(빨강) */
+.spark-refline.ref-target { border-top-color: var(--positive); opacity: 0.9; }
+.spark-refline.ref-stop   { border-top-color: var(--negative); opacity: 0.9; }
+.spark-reflabel.ref-target { color: var(--positive); }
+.spark-reflabel.ref-stop   { color: var(--negative); }
+/* 평단은 좌측, 목표·손절 라벨은 우측에 배치해 겹침 방지 */
+.spark-reflabel.ref-target, .spark-reflabel.ref-stop { left: auto; right: 3px; }
+
+/* ===== 매매관리 패널 ===== */
+.ts-cell { white-space: nowrap; }
+.ts-cell .ts-pctwrap { display: inline-flex; align-items: center; }
+.ts-cell .ts-pm { color: var(--text-muted); font-size: 0.78rem; margin: 0 0.5rem 0 1px; }
+.ts-pct { width: 52px; }
+.ts-price { width: 80px; }
+.ts-pct, .ts-price {
+    text-align: right;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+    color: var(--text-main); border-radius: 6px; padding: 0.25rem 0.35rem;
+    font-size: 0.82rem; font-variant-numeric: tabular-nums;
+}
+.ts-pct.ts-target, .ts-price.ts-target { color: var(--positive); }
+.ts-pct.ts-stop, .ts-price.ts-stop { color: var(--negative); }
+.ts-pct.ts-target:focus, .ts-price.ts-target:focus { outline: none; border-color: var(--positive); }
+.ts-pct.ts-stop:focus, .ts-price.ts-stop:focus { outline: none; border-color: var(--negative); }
+.ts-ctl { font-size: 0.82rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.35rem; }
+.ts-ratio { width: 54px; text-align: right; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+    color: var(--text-main); border-radius: 6px; padding: 0.25rem 0.35rem; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.ts-ratio:focus { outline: none; border-color: var(--accent-purple); }
+.ts-sellqty { font-weight: 600; margin-right: 0.45rem; }
+.ts-real { font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.ts-real.rb-buy { color: var(--positive); }
+.ts-real.rb-sell { color: var(--negative); }
+.ts-status { font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+.ts-status.ts-hold { color: var(--text-muted); }
+.ts-status.ts-target { color: var(--positive); }
+.ts-status.ts-stop { color: var(--negative); }
+.trade-table tr.ts-target { background: rgba(16,185,129,0.08); }
+.trade-table tr.ts-stop { background: rgba(239,68,68,0.08); }
 
 /* ===== 리밸런싱 패널 ===== */
 .view-toggle button.active { background: rgba(139,92,246,0.18); color: var(--accent-purple); }
+
+/* 차트 옵션(목표·손절 선 표시) */
+.chart-opt {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    font-size: 0.78rem; color: var(--text-muted); cursor: pointer; white-space: nowrap;
+    user-select: none;
+}
+.chart-opt input { accent-color: var(--accent-blue); cursor: pointer; }
 
 .rebalance-panel { display: flex; flex-direction: column; min-height: 0; }
 .rb-controls {
@@ -986,4 +1032,156 @@ header {
 @media (min-width: 1700px) {
     .holdings-charts .rebalance-panel { flex: 1; min-height: 0; }
     .holdings-charts .rebalance-panel .table-wrap { flex: 1; min-height: 0; overflow: auto; max-height: none; }
+}
+
+/* ── 국내주식 (원화) 섹션 ─────────────────────────────── */
+.domestic-block { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); }
+.domestic-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    font-size: 1rem; font-weight: 600; margin: 0 0 0.7rem; }
+.domestic-title i { color: #60a5fa; }
+.domestic-sub { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); }
+.domestic-sub .positive { color: var(--positive); }
+.domestic-sub .negative { color: var(--negative); }
+
+/* ─────────────────────────────────────────────────────────────
+   섹터별 추이 페이지 (좌측 메뉴 '섹터 추이')
+   ───────────────────────────────────────────────────────────── */
+.sector-sub { font-size: 0.72rem; color: var(--text-muted); font-weight: 400; margin-left: 0.5rem; }
+.sector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 0.9rem;
+}
+.sector-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 0.7rem 0.9rem 0.6rem;
+}
+.sector-card .mchart-top {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
+}
+.sector-card .mchart-name {
+    font-size: 0.95rem; font-weight: 600; color: var(--text);
+    display: inline-flex; align-items: center;
+}
+.sector-card .mchart-val { font-size: 1.02rem; font-weight: 700; white-space: nowrap; }
+.sector-card .mchart-chg.positive { color: var(--positive); }
+.sector-card .mchart-chg.negative { color: var(--negative); }
+.sector-card .spark-wrap,
+.sector-card .spark-wrap--lg { height: 150px; margin-top: 0.45rem; }
+.sector-card .spark-wrap--lg .spark,
+.sector-card .spark { height: 150px; }
+.sec-rank {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 1.4rem; height: 1.4rem; padding: 0 0.35rem;
+    border-radius: 7px; font-size: 0.72rem; font-weight: 700; margin-right: 0.45rem;
+    background: rgba(255, 255, 255, 0.08); color: var(--text-muted);
+}
+.sec-rank.positive { background: rgba(16, 185, 129, 0.16); color: var(--positive); }
+.sec-rank.negative { background: rgba(239, 68, 68, 0.16); color: var(--negative); }
+
+/* 구성종목 드릴다운 */
+.sec-expand {
+    width: 100%; margin-top: 0.55rem; padding: 0.35rem;
+    background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border);
+    border-radius: 8px; color: var(--text-muted); cursor: pointer;
+    font-size: 0.72rem; font-weight: 500; transition: background 0.15s, color 0.15s;
+}
+.sec-expand:hover { background: rgba(255, 255, 255, 0.07); color: var(--text); }
+.sec-expand i { margin-left: 0.25rem; font-size: 0.62rem; }
+.sector-members {
+    margin-top: 0.6rem;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 0.5rem;
+}
+.sec-mem {
+    background: rgba(255, 255, 255, 0.025); border: 1px solid var(--glass-border);
+    border-radius: 9px; padding: 0.4rem 0.45rem 0.3rem;
+}
+.sec-mem.held { border-color: rgba(99, 102, 241, 0.5); background: rgba(99, 102, 241, 0.07); }
+.sec-mem-top { display: flex; justify-content: space-between; align-items: center; gap: 0.3rem; }
+.sec-mem-code { font-size: 0.72rem; font-weight: 700; color: var(--text); display: inline-flex; align-items: center; gap: 0.2rem; }
+.sec-mem-badge {
+    font-size: 0.52rem; font-weight: 600; padding: 0.05rem 0.25rem; border-radius: 4px;
+    background: rgba(99, 102, 241, 0.25); color: #c7d2fe;
+}
+.sec-mem-chg { font-size: 0.66rem; font-weight: 600; white-space: nowrap; }
+.sec-mem-chg.positive { color: var(--positive); }
+.sec-mem-chg.negative { color: var(--negative); }
+.sec-mem-spark { height: 30px; margin-top: 0.25rem; }
+.sec-mem-spark .spark { height: 30px; }
+.sec-mem-empty, .sec-mem-loading { grid-column: 1 / -1; font-size: 0.72rem; color: var(--text-muted); padding: 0.4rem; }
+
+/* ── 섹터 모멘텀 보드 (갈아타기 판단) ─────────────────── */
+.sector-momentum { overflow-x: auto; }
+.mom-detail { overflow-x: auto; }
+.mom-guide { font-size: 0.78rem; color: var(--text-muted); margin: 0.6rem 0 0.9rem; line-height: 1.5; }
+.mom-guide i { margin-right: 0.3rem; }
+.mom-guide b { color: var(--text); font-weight: 600; }
+.mom-dis { color: var(--text-muted); opacity: 0.8; }
+.mom-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.mom-table th {
+    text-align: left; font-size: 0.68rem; font-weight: 600; color: var(--text-muted);
+    padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--glass-border); white-space: nowrap;
+}
+.mom-table th.num, .mom-table td.num { text-align: right; }
+.mom-row td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--glass-border); }
+.mom-row { cursor: pointer; transition: background 0.12s; }
+.mom-row:hover { background: rgba(255, 255, 255, 0.04); }
+.mom-row.open { background: rgba(255, 255, 255, 0.035); }
+.mom-rank { color: var(--text-muted); font-weight: 700; width: 2rem; }
+.mom-name { font-weight: 600; color: var(--text); white-space: nowrap; }
+.mom-hold { color: #818cf8; font-size: 0.7rem; }
+.mom-exp { color: var(--text-muted); text-align: right; width: 1.6rem; }
+.mom-exp i { font-size: 0.66rem; }
+.mom-table td.positive { color: var(--positive); }
+.mom-table td.negative { color: var(--negative); }
+.accel { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.accel.positive { color: var(--positive); }
+.accel.negative { color: var(--negative); }
+.accel.flat { color: var(--text-muted); }
+
+/* 구성종목 모멘텀 상세 */
+.mom-detail-row > td { padding: 0 0 0.6rem; border: 0; }
+.mom-detail { background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border);
+    border-radius: 10px; padding: 0.7rem 0.8rem; }
+/* 산업별 요약 칩 */
+.mom-ind-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; }
+.mom-ind-lbl { font-size: 0.68rem; font-weight: 600; color: var(--text-muted); margin-right: 0.2rem; }
+.mom-ind-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border);
+    border-radius: 999px; padding: 0.22rem 0.6rem; font-size: 0.7rem; white-space: nowrap;
+}
+.mom-ind-chip b { font-weight: 600; color: var(--text); }
+.mom-ind-chip .positive { color: var(--positive); }
+.mom-ind-chip .negative { color: var(--negative); }
+.mom-ind-n { font-size: 0.6rem; color: var(--text-muted); background: rgba(255,255,255,0.06);
+    border-radius: 999px; padding: 0 0.3rem; }
+.mom-ind-tag { font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; }
+.sec-mem-ind { font-size: 0.58rem; color: var(--text-muted); margin-top: 0.15rem; }
+.mom-mem-legend { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+.mom-mem-table { font-size: 0.78rem; }
+.mom-mem-table th { padding: 0.35rem 0.5rem; }
+.mom-mem-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--glass-border); }
+.mom-mem-table tr:last-child td { border-bottom: 0; }
+.mom-mem-table tr.held { background: rgba(99, 102, 241, 0.09); }
+.mom-mem-table tr.cand { background: rgba(16, 185, 129, 0.07); }
+.cand-badge {
+    display: inline-block; margin-left: 0.35rem; font-size: 0.56rem; font-weight: 600;
+    padding: 0.05rem 0.3rem; border-radius: 4px;
+    background: rgba(16, 185, 129, 0.2); color: #6ee7b7;
+}
+.mom-nodata { color: var(--text-muted); font-size: 0.72rem; }
+.mom-spark { width: 90px; height: 28px; }
+.mom-spark .spark { height: 28px; }
+
+/* 울트라와이드: 섹터 보기일 땐 그리드 해제하고 전체 폭 스크롤 */
+@media (min-width: 1700px) {
+    .main-content.mode-sector { display: block; height: 100vh; overflow: auto; }
+    .main-content.mode-sector .sector-page { margin-bottom: 0; }
+    .main-content.mode-sector .sector-grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
 }

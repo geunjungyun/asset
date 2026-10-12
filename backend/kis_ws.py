@@ -57,9 +57,11 @@ class RealtimeEngine:
             self.source = f"KIS 실시간 ({'모의' if settings.env == 'paper' else '실전'})"
             self._task = asyncio.create_task(self._run_real())
         else:
-            self.mode = "sim"
-            self.source = "KIS 시뮬레이터 (키 미설정)" if settings.use_mock else "KIS 시뮬레이터 (WS 비활성)"
-            self._task = asyncio.create_task(self._run_sim())
+            # 실시간 브로커 피드가 없으면 시뮬레이터(가짜 틱)를 쓰지 않는다.
+            # 유가·브렌트·환율도 /api/market(Yahoo 실값, 약 15분 지연)을 그대로 사용.
+            self.mode = "off"
+            self.source = "Yahoo 폴링(실시간 스트림 미사용)"
+            self._task = None
 
     async def stop(self) -> None:
         if self._task:

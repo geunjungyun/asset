@@ -142,6 +142,7 @@ function renderHoldings(holdings) {
     const body = document.getElementById('holdings-body');
     body.innerHTML = '';
     holdingsList = holdings || [];
+    ensureTargetStopDefaults();   // 목표/손절 초기값(평단 ±15%)
 
     if (!holdings.length) {
         body.innerHTML = '<tr><td colspan="7" class="loading-row">보유 중인 종목이 없습니다.</td></tr>';
@@ -173,6 +174,49 @@ function renderHoldings(holdings) {
 
     updatePnlKrw();
     renderHoldingsPie(holdings);
+}
+
+// 국내주식(원화) 섹션 — 메리츠 국내 계좌
+function renderDomestic(d) {
+    const block = document.getElementById('domestic-block');
+    const body = document.getElementById('domestic-body');
+    if (!block || !body) return;
+    const hold = (d && d.holdings) || [];
+    if (!hold.length) { block.hidden = true; return; }
+    body.innerHTML = '';
+    hold.forEach(h => {
+        const up = (h.eval_pnl || 0) >= 0;
+        const cls = up ? 'positive' : 'negative';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <div class="stock-name">${h.name}</div>
+                <div class="stock-code">${h.code}</div>
+            </td>
+            <td class="num">${Number(h.quantity).toLocaleString('ko-KR')}</td>
+            <td class="num">${won(h.avg_price)}</td>
+            <td class="num">${won(h.current_price)}</td>
+            <td class="num">${won(h.eval_amount)}</td>
+            <td class="num ${cls}">${up ? '+' : '−'}${won(Math.abs(h.eval_pnl))}</td>
+            <td class="num ${cls}">${pct(h.pnl_rate)}</td>`;
+        body.appendChild(tr);
+    });
+    const s = d.summary || {};
+    const up = (s.eval_pnl || 0) >= 0;
+    const sub = document.getElementById('domestic-sub');
+    if (sub) sub.innerHTML =
+        `평가 ${won(s.invest_eval)} · <span class="${up ? 'positive' : 'negative'}">`
+        + `${up ? '+' : '−'}${won(Math.abs(s.eval_pnl))} (${pct(s.pnl_rate)})</span>`
+        + (s.cash ? ` · 예수금 ${won(s.cash)}` : '');
+    block.hidden = false;
+}
+
+async function loadDomestic() {
+    try {
+        renderDomestic(await fetchJSON('/api/account/domestic'));
+    } catch (err) {
+        console.error(err);
+    }
 }
 
 // 평가금액 비중 도넛 차트
@@ -257,40 +301,58 @@ function renderHoldingsPie(holdings) {
 let holdingPeriod = '1D';
 let holdingTimer = null;
 
+let lastChartsData = null;  // 마지막 조회 결과(목표/손절 변경 시 재조회 없이 선만 갱신)
+
 async function loadHoldingsCharts() {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
     try {
         const d = await fetchJSON(`/api/account/holdings-charts?period=${holdingPeriod}`);
-        grid.innerHTML = '';
-        (d.charts || []).forEach(ch => {
-            const up = (ch.change || 0) >= 0;
-            const cur = ch.currency || accountCurrency;
-            const cls = up ? 'positive' : 'negative';
-            // 보유종목 매입평균가 → 차트 기준선
-            const held = (holdingsList || []).find(h => h.code === ch.code);
-            const avg = held ? Number(held.avg_price) : NaN;
-            const card = document.createElement('div');
-            card.className = 'hc-card';
-            card.innerHTML = `
-                <div class="hc-top">
-                    <span class="hc-name">${ch.name || ch.code}</span>
-                    <span class="hc-code">${ch.code}</span>
-                </div>
-                <div class="hc-valrow">
-                    <span class="hc-val">${money(ch.value, cur)}</span>
-                    <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
-                </div>
-                ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, avg)}
-            `;
-            grid.appendChild(card);
-        });
-        if (!grid.children.length) {
-            grid.innerHTML = '<div class="loading-row">보유 종목이 없습니다.</div>';
-        }
+        lastChartsData = d;
+        renderHoldingsChartsGrid(d);
     } catch (err) {
         console.error(err);
         grid.innerHTML = '<div class="loading-row">차트를 불러올 수 없습니다.</div>';
+    }
+}
+
+function renderHoldingsChartsGrid(d) {
+    const grid = document.getElementById('holdings-charts-grid');
+    if (!grid || !d) return;
+    grid.innerHTML = '';
+    (d.charts || []).forEach(ch => {
+        const up = (ch.change || 0) >= 0;
+        const cur = ch.currency || accountCurrency;
+        const cls = up ? 'positive' : 'negative';
+        const held = (holdingsList || []).find(h => h.code === ch.code);
+        // 기준선: 평단(회색) + 목표(초록) + 손절(빨강)
+        const lines = [];
+        if (held && Number.isFinite(Number(held.avg_price)))
+            lines.push({ value: Number(held.avg_price), label: '평단', kind: 'avg' });
+        const ts = targetStops[ch.code] || {};
+        if (showTargetStop) {   // 옵션: 목표·손절 선 표시
+            if (Number.isFinite(Number(ts.target)) && ts.target > 0)
+                lines.push({ value: Number(ts.target), label: '목표', kind: 'target' });
+            if (Number.isFinite(Number(ts.stop)) && ts.stop > 0)
+                lines.push({ value: Number(ts.stop), label: '손절', kind: 'stop' });
+        }
+        const card = document.createElement('div');
+        card.className = 'hc-card';
+        card.innerHTML = `
+            <div class="hc-top">
+                <span class="hc-name">${ch.name || ch.code}</span>
+                <span class="hc-code">${ch.code}</span>
+            </div>
+            <div class="hc-valrow">
+                <span class="hc-val">${money(ch.value, cur)}</span>
+                <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
+            </div>
+            ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines)}
+        `;
+        grid.appendChild(card);
+    });
+    if (!grid.children.length) {
+        grid.innerHTML = '<div class="loading-row">보유 종목이 없습니다.</div>';
     }
 }
 
@@ -326,7 +388,44 @@ let targetWeights = {};
 try { targetWeights = JSON.parse(localStorage.getItem(RB_KEY) || '{}') || {}; } catch (_) { targetWeights = {}; }
 function saveTargets() { try { localStorage.setItem(RB_KEY, JSON.stringify(targetWeights)); } catch (_) {} }
 
+// 목표가/손절가 (종목별)
+const TS_KEY = 'assetpro.targetStops';
+let targetStops = {};
+try { targetStops = JSON.parse(localStorage.getItem(TS_KEY) || '{}') || {}; } catch (_) { targetStops = {}; }
+function saveTargetStops() { try { localStorage.setItem(TS_KEY, JSON.stringify(targetStops)); } catch (_) {} }
+
+// 차트에 목표·손절 선 표시 옵션
+const OPT_TS_KEY = 'assetpro.showTargetStop';
+let showTargetStop = true;
+try { const v = localStorage.getItem(OPT_TS_KEY); if (v !== null) showTargetStop = v === '1'; } catch (_) {}
+
+// 도달 시 매도 비율(%) — 목표(익절)/손절
+const SR_KEY = 'assetpro.sellRatios';
+let sellRatios = { target: 100, stop: 100 };
+try { Object.assign(sellRatios, JSON.parse(localStorage.getItem(SR_KEY) || '{}')); } catch (_) {}
+function saveSellRatios() { try { localStorage.setItem(SR_KEY, JSON.stringify(sellRatios)); } catch (_) {} }
+
+// 초기값: 처음 보는 종목은 목표=평단×1.15, 손절=평단×0.85 (이후 사용자 수정/삭제는 존중)
+function ensureTargetStopDefaults() {
+    let changed = false;
+    (holdingsList || []).forEach(h => {
+        if (targetStops[h.code] === undefined) {
+            const avg = Number(h.avg_price) || 0;
+            if (avg > 0) {
+                targetStops[h.code] = {
+                    target: Math.round(avg * 1.15 * 100) / 100,
+                    stop: Math.round(avg * 0.85 * 100) / 100,
+                };
+                changed = true;
+            }
+        }
+    });
+    if (changed) saveTargetStops();
+}
+
 let rightView = 'charts';
+
+const RIGHT_TITLES = { charts: '보유종목 차트', rebalance: '목표 비중 & 리밸런싱', trade: '매매관리 (목표가·손절가)' };
 
 function initRebalance() {
     const vt = document.getElementById('right-view-toggle');
@@ -337,11 +436,37 @@ function initRebalance() {
         rightView = btn.dataset.view;
         const charts = rightView === 'charts';
         document.getElementById('holdings-charts-grid').hidden = !charts;
-        document.getElementById('rebalance-panel').hidden = charts;
+        document.getElementById('rebalance-panel').hidden = rightView !== 'rebalance';
+        document.getElementById('trade-panel').hidden = rightView !== 'trade';
         document.getElementById('hd-period-toggle').style.display = charts ? '' : 'none';
-        document.getElementById('right-title').textContent = charts ? '보유종목 차트' : '목표 비중 & 리밸런싱';
-        if (!charts) renderRebalance();
+        const optw = document.getElementById('opt-targetstop-wrap');
+        if (optw) optw.style.display = charts ? '' : 'none';
+        document.getElementById('right-title').textContent = RIGHT_TITLES[rightView] || '보유종목 차트';
+        if (rightView === 'rebalance') renderRebalance();
+        if (rightView === 'trade') renderTradeMgmt();
     });
+
+    // 매도 비율(목표/손절) 핸들러
+    const bindRatio = (id, key) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => {
+            let v = Number(el.value); if (!(v >= 0)) v = 0; if (v > 100) v = 100;
+            sellRatios[key] = v; saveSellRatios(); renderTradeMgmt();
+        });
+    };
+    bindRatio('ts-ratio-target', 'target');
+    bindRatio('ts-ratio-stop', 'stop');
+
+    // 목표·손절 선 표시 옵션
+    const optCb = document.getElementById('opt-targetstop');
+    if (optCb) {
+        optCb.checked = showTargetStop;
+        optCb.addEventListener('change', () => {
+            showTargetStop = optCb.checked;
+            try { localStorage.setItem(OPT_TS_KEY, showTargetStop ? '1' : '0'); } catch (_) {}
+            if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
+        });
+    }
 
     const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
     on('rb-equal', () => {
@@ -420,11 +545,116 @@ function renderRebalance() {
     }
 }
 
+// 매매관리: 종목별 목표가/손절가 입력 + 상태
+function renderTradeMgmt() {
+    const body = document.getElementById('trade-body');
+    if (!body) return;
+    const holds = holdingsList || [];
+    const cur = accountCurrency;
+    if (!holds.length) {
+        body.innerHTML = '<tr><td colspan="8" class="loading-row">보유 종목이 없습니다.</td></tr>';
+        return;
+    }
+    // 평단 기준 % 입력 + 가격 입력(동기화) 셀
+    const cell = (code, kind, avg, val) => {
+        const pct = (avg > 0 && val > 0) ? (val / avg - 1) * 100 : null;
+        const tone = kind === 'target' ? 'ts-target' : 'ts-stop';
+        return `<td class="num ts-cell">
+            <span class="ts-pctwrap"><input class="ts-pct ${tone}" type="number" step="0.5" inputmode="decimal" data-code="${code}" data-kind="${kind}" value="${pct !== null ? pct.toFixed(1) : ''}" placeholder="%"><span class="ts-pm">%</span></span>
+            <input class="ts-price ${tone}" type="number" step="0.01" min="0" inputmode="decimal" data-code="${code}" data-kind="${kind}" value="${val || ''}" placeholder="가격">
+        </td>`;
+    };
+
+    // 도달 시 매도 수량·실현손익 셀
+    const sellCell = (qtyHeld, ratio, refPrice, avg) => {
+        if (!(refPrice > 0) || !(qtyHeld > 0)) return `<td class="num">-</td>`;
+        const n = Math.round(qtyHeld * (ratio / 100));
+        const realized = n * (refPrice - avg);
+        const rc = realized >= 0 ? 'rb-buy' : 'rb-sell';
+        return `<td class="num">
+            <span class="ts-sellqty">매도 ${n.toLocaleString('ko-KR')}주</span>
+            <span class="ts-real ${rc}">${realized >= 0 ? '+' : '−'}${money(Math.abs(realized), cur)}</span>
+        </td>`;
+    };
+
+    body.innerHTML = holds.map(h => {
+        const code = h.code, price = Number(h.current_price) || 0, avg = Number(h.avg_price) || 0;
+        const qtyHeld = Number(h.quantity) || 0;
+        const ts = targetStops[code] || {};
+        const target = Number(ts.target) || 0, stop = Number(ts.stop) || 0;
+        let status = '보유중', sc = 'ts-hold';
+        if (target > 0 && price >= target) { status = '🟢 목표 도달'; sc = 'ts-target'; }
+        else if (stop > 0 && price <= stop) { status = '🔴 손절 도달'; sc = 'ts-stop'; }
+        return `<tr class="${sc}">
+            <td><div class="stock-name">${h.name}</div><div class="stock-code">${code}</div></td>
+            <td class="num">${money(price, cur)}</td>
+            <td class="num">${money(avg, cur)}</td>
+            ${cell(code, 'target', avg, target)}
+            ${cell(code, 'stop', avg, stop)}
+            ${sellCell(qtyHeld, sellRatios.target, target, avg)}
+            ${sellCell(qtyHeld, sellRatios.stop, stop, avg)}
+            <td class="ts-status ${sc}">${status}</td>
+        </tr>`;
+    }).join('');
+
+    // 매도 비율 입력값 반영
+    const rt = document.getElementById('ts-ratio-target'), rs = document.getElementById('ts-ratio-stop');
+    if (rt) rt.value = sellRatios.target;
+    if (rs) rs.value = sellRatios.stop;
+
+    const avgOf = (code) => { const h = (holdingsList || []).find(x => x.code === code); return h ? Number(h.avg_price) || 0 : 0; };
+    const setTS = (code, kind, priceVal) => {
+        targetStops[code] = targetStops[code] || {};
+        if (priceVal > 0) targetStops[code][kind] = Math.round(priceVal * 100) / 100;
+        else delete targetStops[code][kind];
+        saveTargetStops();
+        renderTradeMgmt();
+        if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);  // 차트 선 갱신
+    };
+    // % 입력 → 가격 = 평단×(1+%/100)
+    body.querySelectorAll('.ts-pct').forEach(inp => inp.addEventListener('change', () => {
+        const avg = avgOf(inp.dataset.code);
+        setTS(inp.dataset.code, inp.dataset.kind, (inp.value === '' || !avg) ? 0 : avg * (1 + Number(inp.value) / 100));
+    }));
+    // 가격 직접 입력
+    body.querySelectorAll('.ts-price').forEach(inp => inp.addEventListener('change', () => {
+        setTS(inp.dataset.code, inp.dataset.kind, inp.value === '' ? 0 : Number(inp.value));
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // 시장 지표 (국채금리 / 유가 / 환율)
 // ---------------------------------------------------------------------------
 let marketData = null;
 let currentPeriod = '1D';
+let currentView = 'dashboard';  // 좌측 메뉴 보기: 'dashboard' | 'sector'
+let sectorPeriod = '1W';        // 섹터 추이 페이지 기간(기본 1주)
+let sectorData = null;          // /api/sectors 결과 (섹터 ETF 11개)
+let sectorLoaded = false;
+let sectorMode = 'momentum';    // 섹터 추이 보기: 'momentum' | 'chart'
+const expandedSectors = new Set();  // (그래프) 펼쳐진 섹터 key
+const memberCache = {};             // 'key|period' -> members[]
+const expandedMom = new Set();      // (모멘텀) 펼쳐진 섹터 key
+const momCache = {};                // key -> members[] (모멘텀)
+
+// 사용자 보유가 포함된 섹터(모멘텀 랭킹에 ● 표시)
+const HELD_SECTORS = new Set(['xlk', 'xlc', 'xlv']);
+
+// 모멘텀: 주간 환산 속도 → 점수/가속 (백엔드와 동일 공식)
+const WK_M = 4.345, WK_3M = 13.04;
+function momCalc(r1w, r1m, r3m) {
+    const p1w = r1w, p1m = r1m / WK_M, p3m = r3m / WK_3M;
+    return { score: 0.5 * p1w + 0.3 * p1m + 0.2 * p3m, accel: p1w - p1m };
+}
+function accelLabel(accel) {
+    if (accel >= 0.5) return { txt: '▲ 가속', cls: 'positive' };
+    if (accel <= -0.5) return { txt: '▼ 둔화', cls: 'negative' };
+    return { txt: '→ 유지', cls: 'flat' };
+}
+const pctCell = (v) => {
+    const up = (v || 0) >= 0;
+    return `<td class="num ${up ? 'positive' : 'negative'}">${up ? '+' : ''}${(v || 0).toFixed(2)}%</td>`;
+};
 const MARKET_REFRESH_MS = 60000;  // 스냅샷(금리/일봉) 폴링 주기
 
 // KIS 실시간이 담당하는 지표(하이브리드). 나머지(금리)는 Yahoo.
@@ -437,6 +667,7 @@ function fmtValue(ind) {
     const v = ind.value;
     if (ind.unit === '%') return v.toFixed(2) + '<span class="unit">%</span>';
     if (ind.unit === '$') return '<span class="unit">$</span>' + v.toFixed(1);
+    if (ind.unit === 'pt') return v.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
     return '<span class="unit">₩</span>' + Math.round(v).toLocaleString('ko-KR');
 }
 
@@ -482,20 +713,24 @@ function sparkline(series, up, scaleMin, scaleMax) {
                 <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
             </linearGradient></defs>
             <polygon points="${area}" fill="url(#${gid})"/>
-            <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"
+            <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.0"
+                vector-effect="non-scaling-stroke"
                 stroke-linejoin="round" stroke-linecap="round"/>
         </svg>`;
 }
 
 // 차트 블록: 스파크라인 + 세로축(최대/최소) 라벨 + 최고/최저 지점 점 + 시간축
 // big=true 면 상세차트(큰 높이 + 축 라벨 5개)
-function chartBlock(series, times, up, unit, big, refLine) {
+// refLines: [{value, label, kind:'avg'|'target'|'stop'}] (단일 숫자도 평단으로 허용)
+function chartBlock(series, times, up, unit, big, refLines) {
     if (!Array.isArray(series) || !series.length) series = [0];
     const sMin = Math.min(...series), sMax = Math.max(...series);  // 시계열 실제 최소/최대
-    const hasRef = Number.isFinite(refLine);
-    // 기준선(매입평균가)이 범위 밖이면 스케일을 확장해 선이 보이게
-    const min = hasRef ? Math.min(sMin, refLine) : sMin;
-    const max = hasRef ? Math.max(sMax, refLine) : sMax;
+    let lines = [];
+    if (Number.isFinite(refLines)) lines = [{ value: refLines, label: '평단', kind: 'avg' }];
+    else if (Array.isArray(refLines)) lines = refLines.filter(l => l && Number.isFinite(l.value));
+    // 기준선이 범위 밖이면 스케일을 확장해 선이 보이게
+    let min = sMin, max = sMax;
+    lines.forEach(l => { min = Math.min(min, l.value); max = Math.max(max, l.value); });
     const range = (max - min) || 1;
     const n = series.length, den = Math.max(1, n - 1);
     const W = SPARK_W, H = SPARK_H, pad = SPARK_PAD;
@@ -506,13 +741,12 @@ function chartBlock(series, times, up, unit, big, refLine) {
     const dot = (i, v, kind) =>
         `<span class="spark-dot ${kind}" style="left:${leftPct(i).toFixed(1)}%;top:${topPct(v).toFixed(1)}%"></span>`;
     const wrapCls = big ? 'spark-wrap spark-wrap--lg' : 'spark-wrap';
-    // 매입평균가 기준선 + 라벨
-    let refHtml = '';
-    if (hasRef) {
-        const t = topPct(refLine);
-        refHtml = `<span class="spark-refline" style="top:${t.toFixed(1)}%"></span>
-            <span class="spark-reflabel" style="top:${t.toFixed(1)}%">평단 ${fmtNum(refLine, unit)}</span>`;
-    }
+    // 기준선(평단/목표/손절) + 라벨
+    const refHtml = lines.map(l => {
+        const t = topPct(l.value).toFixed(1);
+        return `<span class="spark-refline ref-${l.kind}" style="top:${t}%"></span>`
+            + `<span class="spark-reflabel ref-${l.kind}" style="top:${t}%">${l.label} ${fmtNum(l.value, unit)}</span>`;
+    }).join('');
     return `
         <div class="${wrapCls}">
             ${sparkline(series, up, min, max)}
@@ -548,7 +782,7 @@ function renderMarket() {
             const up = p.change >= 0;
             const cls = up ? 'positive' : 'negative';
             const arrow = up ? '▲' : '▼';
-            const isKis = KIS_KEYS.has(ind.key);
+            const isKis = KIS_KEYS.has(ind.key) && streamMeta.mode === 'live';
             const srcTag = isKis
                 ? `<span class="mc-src kis">KIS 실시간</span>`
                 : `<span class="mc-src">Yahoo</span>`;
@@ -574,19 +808,21 @@ function renderMarket() {
     });
     }  // end if(container)
 
-    // 출처: 금리=Yahoo, 유가/환율=KIS 실시간(스트림) — 하이브리드
-    const kisSrc = streamMeta.source || 'KIS 연결 대기';
+    // 출처 표기: 실시간 브로커(live)면 하이브리드, 아니면 전부 Yahoo
+    const live = streamMeta.mode === 'live';
     const mu = document.getElementById('market-updated');
     if (mu) mu.textContent =
         (marketData.updated_at ? '기준: ' + marketData.updated_at.replace('T', ' ') + ' · ' : '')
-        + `금리 Yahoo · 유가/환율 ${kisSrc}`;
+        + (live ? `금리 Yahoo · 유가/환율 ${streamMeta.source}` : 'Yahoo · 약 15분 지연 · 60초 갱신');
 
-    // 실시간 표시등: KIS 스트림이 붙어 있으면 초록 펄스
+    // 표시등: 실시간 브로커면 '실시간', 아니면 Yahoo 자동갱신(데이터 로드 시 초록)
     const dot = document.getElementById('live-dot');
     if (dot) {
-        const on = streamMeta.mode === 'live' || streamMeta.mode === 'sim';
+        const on = live || !!marketData;
         dot.className = 'live-dot ' + (on ? 'on' : 'off');
-        dot.title = on ? `KIS 실시간 스트림 수신 중 — ${kisSrc}` : 'KIS 스트림 연결 대기';
+        dot.title = live
+            ? `실시간 스트림 수신 중 — ${streamMeta.source}`
+            : 'Yahoo 자동 갱신 (약 15분 지연, 60초마다)';
     }
 
     renderMarketCharts();  // 지표 그래프 패널
@@ -596,7 +832,7 @@ function renderMarket() {
     if (u && u.value) { usdKrwRate = u.value; updateKrwLines(); }
 }
 
-// 지표 그래프: 시장지표 5개의 큰 그래프 (시장지표 옆 패널)
+// 지표 그래프: 시장지표 큰 그래프 (지표 그래프 패널)
 function renderMarketCharts() {
     const grid = document.getElementById('market-charts-grid');
     if (!grid || !marketData) return;
@@ -617,6 +853,333 @@ function renderMarketCharts() {
             ${chartBlock(p.series, p.times, up, ind.unit, true)}
         `;
         grid.appendChild(card);
+    });
+}
+
+// 섹터별 추이 페이지: SPDR 섹터 ETF 11개. 선택 기간의 등락률 내림차순(1위→꼴찌) 정렬.
+function renderSectorCharts() {
+    const grid = document.getElementById('sector-grid');
+    if (!grid) return;
+    if (!sectorData) {
+        grid.innerHTML = '<div class="loading-row">섹터 그래프를 불러오는 중...</div>';
+        return;
+    }
+    grid.innerHTML = '';
+    const rows = sectorData.sectors
+        .map(s => ({ s, p: s.periods[sectorPeriod] }))
+        .filter(r => r.p)
+        .sort((a, b) => b.p.change_pct - a.p.change_pct);
+    rows.forEach((r, i) => {
+        const { s, p } = r;
+        const up = p.change_pct >= 0;
+        const cls = up ? 'positive' : 'negative';
+        const card = document.createElement('div');
+        card.className = 'mchart-card sector-card';
+        card.innerHTML = `
+            <div class="mchart-top">
+                <span class="mchart-name"><span class="sec-rank ${cls}">${i + 1}</span> ${s.name}</span>
+                <span class="mchart-val mchart-chg ${cls}">${up ? '▲' : '▼'} ${up ? '+' : ''}${p.change_pct.toFixed(2)}%</span>
+            </div>
+            ${chartBlock(p.series, p.times, up, s.unit, true)}
+            <button class="sec-expand" data-key="${s.key}">구성종목 <i class="fa-solid fa-chevron-down"></i></button>
+            <div class="sector-members" data-key="${s.key}" hidden></div>
+        `;
+        grid.appendChild(card);
+    });
+    // 펼쳐둔 섹터는 다시 펼침(기간 바뀌면 해당 기간으로 재조회)
+    expandedSectors.forEach(k => expandSector(k));
+    const su = document.getElementById('sector-updated');
+    if (su) su.textContent =
+        (sectorData.updated_at ? '기준: ' + sectorData.updated_at.replace('T', ' ') + ' · ' : '')
+        + 'SPDR 섹터 ETF · Yahoo (약 15분 지연)';
+}
+
+// 구성종목 미니 카드 목록 HTML
+function renderMembers(members) {
+    if (!members || !members.length) return '<div class="sec-mem-empty">구성종목 정보 없음</div>';
+    return members.map(m => {
+        const up = (m.change_pct || 0) >= 0;
+        const cls = up ? 'positive' : 'negative';
+        return `
+            <div class="sec-mem ${m.held ? 'held' : ''}">
+                <div class="sec-mem-top">
+                    <span class="sec-mem-code">${m.code}${m.held ? '<span class="sec-mem-badge" title="보유 종목">보유</span>' : ''}</span>
+                    <span class="sec-mem-chg ${cls}">${up ? '▲' : '▼'} ${up ? '+' : ''}${(m.change_pct || 0).toFixed(2)}%</span>
+                </div>
+                ${m.industry ? `<div class="sec-mem-ind">${m.industry}</div>` : ''}
+                <div class="sec-mem-spark">${sparkline(m.series && m.series.length ? m.series : [0], up)}</div>
+            </div>`;
+    }).join('');
+}
+
+// 섹터 펼치기: 현재 기간(sectorPeriod)으로 구성종목 조회/렌더
+async function expandSector(key) {
+    expandedSectors.add(key);
+    const btn = document.querySelector(`.sec-expand[data-key="${key}"]`);
+    const box = document.querySelector(`.sector-members[data-key="${key}"]`);
+    if (!box) return;
+    box.hidden = false;
+    if (btn) btn.innerHTML = '구성종목 접기 <i class="fa-solid fa-chevron-up"></i>';
+    const ck = key + '|' + sectorPeriod;
+    if (memberCache[ck]) { box.innerHTML = renderMembers(memberCache[ck]); return; }
+    box.innerHTML = '<div class="loading-row sec-mem-loading">구성종목 불러오는 중...</div>';
+    try {
+        const d = await fetchJSON(`/api/sectors/${key}/members?period=${sectorPeriod}`);
+        memberCache[ck] = d.members;
+        const b2 = document.querySelector(`.sector-members[data-key="${key}"]`);
+        if (b2 && expandedSectors.has(key)) b2.innerHTML = renderMembers(d.members);
+    } catch (err) {
+        console.error(err);
+        const b2 = document.querySelector(`.sector-members[data-key="${key}"]`);
+        if (b2) b2.innerHTML = '<div class="loading-row">구성종목을 불러올 수 없습니다.</div>';
+    }
+}
+
+function collapseSector(key) {
+    expandedSectors.delete(key);
+    const btn = document.querySelector(`.sec-expand[data-key="${key}"]`);
+    const box = document.querySelector(`.sector-members[data-key="${key}"]`);
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+    if (btn) btn.innerHTML = '구성종목 <i class="fa-solid fa-chevron-down"></i>';
+}
+
+// 섹터 데이터 로드(필요 시) 후 현재 보기 렌더
+async function loadSectors(force) {
+    if (sectorData && !force) { renderSectorView(); return; }
+    try {
+        sectorData = await fetchJSON('/api/sectors');
+        sectorLoaded = true;
+    } catch (err) {
+        console.error(err);
+        const box = document.getElementById(sectorMode === 'momentum' ? 'sector-momentum' : 'sector-grid');
+        if (box) box.innerHTML = '<div class="loading-row">섹터 데이터를 불러올 수 없습니다.</div>';
+        return;
+    }
+    renderSectorView();
+}
+
+// 보기(모멘텀/그래프)에 맞게 렌더
+function renderSectorView() {
+    const mom = document.getElementById('sector-momentum');
+    const grid = document.getElementById('sector-grid');
+    const pt = document.getElementById('sector-period-toggle');
+    const isMom = sectorMode === 'momentum';
+    if (mom) mom.hidden = !isMom;
+    if (grid) grid.hidden = isMom;
+    if (pt) pt.hidden = isMom;  // 기간 토글은 그래프 보기에서만
+    if (isMom) renderSectorMomentum(); else renderSectorCharts();
+}
+
+// 섹터 모멘텀 랭킹 보드 (갈아타기 판단)
+function renderSectorMomentum() {
+    const box = document.getElementById('sector-momentum');
+    if (!box) return;
+    if (!sectorData) { box.innerHTML = '<div class="loading-row">모멘텀을 불러오는 중...</div>'; return; }
+    const rows = sectorData.sectors.map(s => {
+        const r1w = s.periods['1W']?.change_pct ?? 0;
+        const r1m = s.periods['1M']?.change_pct ?? 0;
+        const r3m = s.periods['3M']?.change_pct ?? 0;
+        const m = momCalc(r1w, r1m, r3m);
+        return { s, r1w, r1m, r3m, ...m };
+    }).sort((a, b) => b.score - a.score);
+
+    let html = `
+        <p class="mom-guide"><i class="fa-solid fa-circle-info"></i>
+            세 기간 수익률과 <b>가속</b>(최근 1주 속도 − 1개월 속도)으로 순위. ● = 내 보유 섹터 · 섹터를 누르면 종목 모멘텀·갈아타기 후보. <span class="mom-dis">참고용(투자 자문 아님)</span></p>
+        <table class="mom-table">
+            <thead><tr>
+                <th>#</th><th>섹터</th>
+                <th class="num">1주</th><th class="num">1개월</th><th class="num">3개월</th>
+                <th class="num">가속</th><th></th>
+            </tr></thead>
+            <tbody>`;
+    rows.forEach((r, i) => {
+        const a = accelLabel(r.accel);
+        const held = HELD_SECTORS.has(r.s.key);
+        const open = expandedMom.has(r.s.key);
+        html += `
+            <tr class="mom-row ${open ? 'open' : ''}" data-key="${r.s.key}">
+                <td class="mom-rank">${i + 1}</td>
+                <td class="mom-name">${held ? '<span class="mom-hold">●</span> ' : ''}${r.s.name}</td>
+                ${pctCell(r.r1w)}${pctCell(r.r1m)}${pctCell(r.r3m)}
+                <td class="num"><span class="accel ${a.cls}">${a.txt}</span></td>
+                <td class="mom-exp"><i class="fa-solid fa-chevron-${open ? 'up' : 'down'}"></i></td>
+            </tr>
+            <tr class="mom-detail-row" data-key="${r.s.key}" ${open ? '' : 'hidden'}>
+                <td colspan="7"><div class="mom-detail" data-key="${r.s.key}"></div></td>
+            </tr>`;
+    });
+    html += `</tbody></table>`;
+    box.innerHTML = html;
+    expandedMom.forEach(k => expandMomSector(k));
+    const su = document.getElementById('sector-updated');
+    if (su) su.textContent =
+        (sectorData.updated_at ? '기준: ' + sectorData.updated_at.replace('T', ' ') + ' · ' : '')
+        + 'Yahoo (약 15분 지연)';
+}
+
+// 섹터 펼침: 구성종목 모멘텀 표(점수순) + 같은 섹터 갈아타기 후보 표시
+async function expandMomSector(key) {
+    expandedMom.add(key);
+    const row = document.querySelector(`.mom-row[data-key="${key}"]`);
+    const dr = document.querySelector(`.mom-detail-row[data-key="${key}"]`);
+    const box = document.querySelector(`.mom-detail[data-key="${key}"]`);
+    if (row) row.classList.add('open');
+    if (dr) dr.hidden = false;
+    const chev = row && row.querySelector('.mom-exp i');
+    if (chev) chev.className = 'fa-solid fa-chevron-up';
+    if (!box) return;
+    if (momCache[key]) { box.innerHTML = renderMomMembers(momCache[key]); return; }
+    box.innerHTML = '<div class="loading-row">종목 모멘텀 계산 중...</div>';
+    try {
+        const d = await fetchJSON(`/api/sectors/${key}/momentum`);
+        momCache[key] = d;
+        const b2 = document.querySelector(`.mom-detail[data-key="${key}"]`);
+        if (b2 && expandedMom.has(key)) b2.innerHTML = renderMomMembers(d);
+    } catch (err) {
+        console.error(err);
+        const b2 = document.querySelector(`.mom-detail[data-key="${key}"]`);
+        if (b2) b2.innerHTML = '<div class="loading-row">종목 모멘텀을 불러올 수 없습니다.</div>';
+    }
+}
+
+function collapseMomSector(key) {
+    expandedMom.delete(key);
+    const row = document.querySelector(`.mom-row[data-key="${key}"]`);
+    const dr = document.querySelector(`.mom-detail-row[data-key="${key}"]`);
+    if (row) row.classList.remove('open');
+    if (dr) { dr.hidden = true; }
+    const box = document.querySelector(`.mom-detail[data-key="${key}"]`);
+    if (box) box.innerHTML = '';
+    const chev = row && row.querySelector('.mom-exp i');
+    if (chev) chev.className = 'fa-solid fa-chevron-down';
+}
+
+// 구성종목 모멘텀 표. 갈아타기 후보 = 내 보유보다 순위 높은 비보유 종목.
+function renderMomMembers(d) {
+    const members = (d && d.members) || [];
+    const industries = (d && d.industries) || [];
+    if (!members.length) return '<div class="loading-row">구성종목 없음</div>';
+    // 보유 종목 중 가장 낮은 순위(rank 큰 값) → 그보다 위의 비보유는 '후보'
+    const heldRanks = members.filter(m => m.held).map(m => m.rank);
+    const worstHeld = heldRanks.length ? Math.max(...heldRanks) : 0;
+    const anyHeld = heldRanks.length > 0;
+
+    // 산업별 요약(강한 하위 산업 순)
+    let indHtml = '';
+    if (industries.length) {
+        indHtml = '<div class="mom-ind-row"><span class="mom-ind-lbl">산업별</span>' +
+            industries.map(g => {
+                const a = accelLabel(g.accel);
+                const up = (g.r1w || 0) >= 0;
+                return `<span class="mom-ind-chip">
+                    <b>${g.held ? '<span class="mom-hold">●</span> ' : ''}${g.name}</b>
+                    <span class="mom-ind-n">${g.count}</span>
+                    <span class="${up ? 'positive' : 'negative'}">1주 ${up ? '+' : ''}${(g.r1w || 0).toFixed(1)}%</span>
+                    <span class="accel ${a.cls}">${a.txt}</span>
+                </span>`;
+            }).join('') + '</div>';
+    }
+
+    let html = indHtml + `
+        <div class="mom-mem-legend">종목 모멘텀 점수순 · <span class="mom-hold">●</span> 보유 · <span class="cand-badge">후보</span> 같은 섹터에서 보유보다 센 종목</div>
+        <table class="mom-table mom-mem-table">
+            <thead><tr>
+                <th>#</th><th>종목</th><th>산업</th><th class="num">현재가</th>
+                <th class="num">1주</th><th class="num">1개월</th><th class="num">3개월</th>
+                <th class="num">가속</th><th>추이(3M)</th>
+            </tr></thead><tbody>`;
+    members.forEach(m => {
+        if (m.no_data) {
+            html += `<tr class="${m.held ? 'held' : ''}"><td>${m.rank}</td><td class="mom-name">${m.code}</td><td class="mom-ind-tag">${m.industry || ''}</td><td colspan="6" class="mom-nodata">데이터 없음</td></tr>`;
+            return;
+        }
+        const a = accelLabel(m.accel);
+        const up = (m.r1w || 0) >= 0;
+        const cand = !m.held && anyHeld && m.rank < worstHeld;
+        html += `
+            <tr class="${m.held ? 'held' : ''} ${cand ? 'cand' : ''}">
+                <td>${m.rank}</td>
+                <td class="mom-name">${m.held ? '<span class="mom-hold">●</span> ' : ''}${m.code}${cand ? '<span class="cand-badge">후보</span>' : ''}</td>
+                <td class="mom-ind-tag">${m.industry || ''}</td>
+                <td class="num">$${(m.value || 0).toFixed(2)}</td>
+                ${pctCell(m.r1w)}${pctCell(m.r1m)}${pctCell(m.r3m)}
+                <td class="num"><span class="accel ${a.cls}">${a.txt}</span></td>
+                <td class="mom-spark">${sparkline(m.series && m.series.length ? m.series : [0], up)}</td>
+            </tr>`;
+    });
+    html += `</tbody></table>`;
+    return html;
+}
+
+// 좌측 메뉴 보기 전환 (대시보드 ↔ 섹터 추이)
+const DASH_SELECTORS = ['.market-charts-section', '.kis-section', '.holdings-charts', '.dashboard-grid'];
+function showView(name) {
+    currentView = name;
+    const sector = name === 'sector';
+    DASH_SELECTORS.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => { el.hidden = sector; });
+    });
+    const sp = document.getElementById('sector-page');
+    if (sp) sp.hidden = !sector;
+    const main = document.querySelector('.main-content');
+    if (main) main.classList.toggle('mode-sector', sector);
+    // 사이드바 활성 표시
+    document.querySelectorAll('.sidebar nav li').forEach(li => {
+        const a = li.querySelector('a');
+        li.classList.toggle('active', !!a && a.dataset.view === name);
+    });
+    if (sector) loadSectors(!sectorLoaded);
+}
+
+function initSidebarNav() {
+    document.querySelectorAll('.sidebar nav a[data-view]').forEach(a => {
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            showView(a.dataset.view);
+        });
+    });
+}
+
+function initSectorPeriodToggle() {
+    const toggle = document.getElementById('sector-period-toggle');
+    if (toggle) {
+        toggle.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            toggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            sectorPeriod = btn.dataset.period;
+            renderSectorCharts();  // 펼쳐둔 섹터는 새 기간으로 재조회됨
+        });
+    }
+    // 구성종목 펼치기/접기 (이벤트 위임)
+    const grid = document.getElementById('sector-grid');
+    if (grid) grid.addEventListener('click', (e) => {
+        const b = e.target.closest('.sec-expand');
+        if (!b) return;
+        const k = b.dataset.key;
+        if (expandedSectors.has(k)) collapseSector(k); else expandSector(k);
+    });
+
+    // 모멘텀/그래프 보기 전환
+    const vt = document.getElementById('sector-view-toggle');
+    if (vt) vt.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        vt.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        sectorMode = btn.dataset.sview;
+        renderSectorView();
+    });
+
+    // 모멘텀 섹터 행 펼치기/접기 (이벤트 위임)
+    const mom = document.getElementById('sector-momentum');
+    if (mom) mom.addEventListener('click', (e) => {
+        const r = e.target.closest('.mom-row');
+        if (!r) return;
+        const k = r.dataset.key;
+        if (expandedMom.has(k)) collapseMomSector(k); else expandMomSector(k);
     });
 }
 
@@ -682,6 +1245,8 @@ function handleTick(msg) {
         return;
     }
     if (msg.type === 'tick' && msg.key) {
+        // 실제 브로커 실시간(live)일 때만 틱으로 덮어씀. 그 외에는 Yahoo 값 유지.
+        if (streamMeta.mode !== 'live') return;
         livePrices[msg.key] = { value: msg.value, as_of: msg.as_of };
         if (marketData) {
             const ind = marketData.indicators.find(i => i.key === msg.key);
@@ -754,6 +1319,7 @@ async function loadAll() {
         const account = await fetchJSON('/api/account/status');
         renderAccount(account);
         loadHoldingsCharts();  // 보유종목 전체 차트
+        loadDomestic();        // 국내주식(원화) 섹션
     } catch (err) {
         console.error(err);
         const badge = document.getElementById('mode-badge');
@@ -787,12 +1353,16 @@ document.addEventListener('DOMContentLoaded', () => {
     initPeriodToggle();
     initHoldingToggle();
     initRebalance();
+    initSidebarNav();
+    initSectorPeriodToggle();
     loadAll();
     connectStream();  // KIS 실시간 tick (SSE)
     document.getElementById('refresh-btn').addEventListener('click', loadAll);
 
     // 스냅샷(금리/일봉) 폴링 — 유가/환율은 스트림이 실시간 담당
     setInterval(() => {
-        if (!document.hidden) refreshMarket();
+        if (document.hidden) return;
+        refreshMarket();
+        if (currentView === 'sector') loadSectors(true);  // 섹터 보기면 섹터도 갱신
     }, MARKET_REFRESH_MS);
 });

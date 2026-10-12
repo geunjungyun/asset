@@ -74,3 +74,34 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+# --------------------------------------------------------------------------- #
+# 메리츠증권 Open API 설정 (해외주식 계좌)
+# 공식 저장소: github.com/meritz-securities/open-api
+# 운영 서버만 존재(모의계좌 없음). 앱키가 계좌에 바인딩되어 계좌번호 불필요.
+# --------------------------------------------------------------------------- #
+MERITZ_BASE = "https://openapi.imeritz.com:9443"
+
+
+@dataclass
+class MeritzSettings:
+    app_key: str
+    app_secret: str
+    base_url: str = MERITZ_BASE
+
+    @property
+    def enabled(self) -> bool:
+        """앱키·시크릿이 모두 있으면 실연동."""
+        return bool(self.app_key and self.app_secret)
+
+
+def get_meritz() -> MeritzSettings:
+    return MeritzSettings(
+        app_key=_clean(os.getenv("MERITZ_APP_KEY")),
+        app_secret=_clean(os.getenv("MERITZ_APP_SECRET")),
+        base_url=_clean(os.getenv("MERITZ_BASE_URL")) or MERITZ_BASE,
+    )
+
+
+meritz_settings = get_meritz()

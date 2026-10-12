@@ -28,6 +28,8 @@ KST = timezone(timedelta(hours=9))
 
 # key, 표시명, 그룹, 단위, Yahoo 심볼
 INDICATORS = [
+    ("sp500", "S&P 500", "지수", "pt", "^GSPC"),
+    ("ndx100", "나스닥 100", "지수", "pt", "^NDX"),
     ("ust10y", "美 국채 10Y", "금리", "%", "^TNX"),
     ("ust30y", "美 국채 30Y", "금리", "%", "^TYX"),
     ("wti", "WTI", "유가", "$", "CL=F"),
@@ -35,7 +37,87 @@ INDICATORS = [
     ("usdkrw", "USD/KRW", "환율", "₩", "KRW=X"),
 ]
 
-GROUPS = ["금리", "유가", "환율"]
+GROUPS = ["지수", "금리", "유가", "환율"]
+
+# SPDR 섹터 ETF (11개 GICS 섹터). 섹터별 주/월 단위 추이 모니터링용.
+# key, 표시명(섹터), 그룹, 단위, Yahoo 심볼
+SECTOR_ETFS = [
+    ("xlk",  "기술",        "섹터", "$", "XLK"),
+    ("xlc",  "커뮤니케이션", "섹터", "$", "XLC"),
+    ("xlv",  "헬스케어",     "섹터", "$", "XLV"),
+    ("xlf",  "금융",        "섹터", "$", "XLF"),
+    ("xly",  "경기소비재",   "섹터", "$", "XLY"),
+    ("xlp",  "필수소비재",   "섹터", "$", "XLP"),
+    ("xle",  "에너지",      "섹터", "$", "XLE"),
+    ("xli",  "산업재",      "섹터", "$", "XLI"),
+    ("xlb",  "소재",        "섹터", "$", "XLB"),
+    ("xlre", "부동산",      "섹터", "$", "XLRE"),
+    ("xlu",  "유틸리티",     "섹터", "$", "XLU"),
+]
+
+# 섹터별 대표(시총 상위) 구성 종목 — 드릴다운용. (Yahoo 티커)
+SECTOR_MEMBERS = {
+    "xlk":  ["NVDA", "MSFT", "AAPL", "AVGO", "ORCL", "CRM", "AMD", "MU", "MRVL"],
+    "xlc":  ["GOOGL", "META", "NFLX", "DIS", "TMUS", "T", "VZ", "CMCSA"],
+    "xlv":  ["LLY", "JNJ", "ABBV", "MRK", "UNH", "ABT", "AMGN", "TMO"],
+    "xlf":  ["JPM", "BRK-B", "V", "MA", "BAC", "WFC", "GS", "MS"],
+    "xly":  ["AMZN", "TSLA", "HD", "MCD", "BKNG", "LOW", "NKE", "SBUX"],
+    "xlp":  ["WMT", "COST", "PG", "KO", "PEP", "PM", "MO", "MDLZ"],
+    "xle":  ["XOM", "CVX", "COP", "WMB", "EOG", "SLB", "OKE", "PSX"],
+    "xli":  ["GE", "RTX", "CAT", "UBER", "BA", "HON", "UNP", "DE"],
+    "xlb":  ["LIN", "SHW", "APD", "ECL", "FCX", "NEM", "DOW", "NUE"],
+    "xlre": ["PLD", "AMT", "EQIX", "WELL", "SPG", "O", "DLR", "CCI"],
+    "xlu":  ["NEE", "SO", "DUK", "CEG", "AEP", "D", "EXC", "SRE"],
+}
+
+# 사용자 보유 종목(섹터 드릴다운에서 강조 표시)
+USER_HELD = {"MU", "SNDK", "GOOGL", "MRVL", "AMD", "AMGN", "LLY", "NVDA"}
+
+# 종목 → 주요 하위 산업(Industry) 분류
+INDUSTRY = {
+    # 기술
+    "NVDA": "반도체", "AVGO": "반도체", "AMD": "반도체", "MU": "반도체", "MRVL": "반도체",
+    "MSFT": "소프트웨어", "ORCL": "소프트웨어", "CRM": "소프트웨어",
+    "AAPL": "하드웨어·전자",
+    # 커뮤니케이션
+    "GOOGL": "인터넷·미디어", "META": "인터넷·미디어", "NFLX": "인터넷·미디어", "DIS": "인터넷·미디어",
+    "TMUS": "통신서비스", "T": "통신서비스", "VZ": "통신서비스", "CMCSA": "통신서비스",
+    # 헬스케어
+    "LLY": "제약", "ABBV": "제약", "MRK": "제약",
+    "AMGN": "바이오테크",
+    "JNJ": "의료기기·서비스", "UNH": "의료기기·서비스", "ABT": "의료기기·서비스", "TMO": "의료기기·서비스",
+    # 금융
+    "JPM": "은행", "BAC": "은행", "WFC": "은행",
+    "V": "카드·결제", "MA": "카드·결제",
+    "GS": "자본시장·보험", "MS": "자본시장·보험", "BRK-B": "자본시장·보험",
+    # 경기소비재
+    "AMZN": "인터넷소매", "TSLA": "자동차",
+    "HD": "소매·외식·여행", "MCD": "소매·외식·여행", "LOW": "소매·외식·여행",
+    "BKNG": "소매·외식·여행", "SBUX": "소매·외식·여행", "NKE": "소매·외식·여행",
+    # 필수소비재
+    "WMT": "유통", "COST": "유통",
+    "KO": "음식료·담배", "PEP": "음식료·담배", "MO": "음식료·담배", "MDLZ": "음식료·담배",
+    "PG": "생활용품",
+    # 에너지
+    "XOM": "종합·E&P", "CVX": "종합·E&P", "COP": "종합·E&P", "EOG": "종합·E&P",
+    "SLB": "서비스·중류", "WMB": "서비스·중류", "OKE": "서비스·중류", "PSX": "서비스·중류",
+    # 산업재
+    "GE": "자본재", "RTX": "자본재", "CAT": "자본재", "BA": "자본재", "HON": "자본재", "DE": "자본재",
+    "UBER": "운송", "UNP": "운송",
+    # 소재
+    "LIN": "화학", "SHW": "화학", "APD": "화학", "ECL": "화학", "DOW": "화학",
+    "FCX": "금속·광업", "NEM": "금속·광업", "NUE": "금속·광업",
+    # 부동산
+    "AMT": "인프라리츠", "CCI": "인프라리츠", "EQIX": "데이터센터리츠", "DLR": "데이터센터리츠",
+    "PLD": "물류리츠", "SPG": "기타리츠", "O": "기타리츠", "WELL": "기타리츠",
+    # 유틸리티
+    "NEE": "전력", "SO": "전력", "DUK": "전력", "AEP": "전력", "D": "전력", "EXC": "전력",
+    "CEG": "신재생·복합", "SRE": "신재생·복합",
+}
+
+
+def _industry(sym: str) -> str:
+    return INDUSTRY.get(sym, "기타")
 
 # 장중(5분봉) 기간 → 최근 N일
 INTRA_DAYS = {"1D": 1, "2D": 2, "3D": 3, "4D": 4, "5D": 5}
@@ -232,9 +314,192 @@ async def get_market() -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# 섹터별 추이 (SPDR 섹터 ETF 11개) — 주/월 단위 모니터링
+# --------------------------------------------------------------------------- #
+_sec_mem: dict | None = None
+_sec_last_good: dict | None = None
+SECTOR_CACHE_TTL = 60  # 초 (보조 지표라 조금 길게)
+
+
+async def get_sectors() -> dict:
+    """11개 GICS 섹터(SPDR ETF)의 기간별 추이. market과 동일한 periods 구조."""
+    global _sec_mem, _sec_last_good
+    if _sec_mem and time.time() - _sec_mem.get("_ts", 0) < SECTOR_CACHE_TTL:
+        return _sec_mem["data"]
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        built = await asyncio.gather(*[_build(client, row) for row in SECTOR_ETFS])
+
+    sectors, fell_back = [], []
+    for row, item in zip(SECTOR_ETFS, built):
+        if item is None:
+            item = _mock_indicator(row)
+            fell_back.append(row[1])
+        sectors.append(item)
+
+    live_count = len(SECTOR_ETFS) - len(fell_back)
+    if live_count == 0 and _sec_last_good:
+        stale = dict(_sec_last_good["data"])
+        stale["warning"] = "실시간 갱신에 실패해 마지막 수신 시세를 표시합니다."
+        return stale
+
+    result = {
+        "mode": "live" if live_count else "mock",
+        "source": "Yahoo Finance · 약 15분 지연",
+        "updated_at": max((s["as_of"] for s in sectors), default=""),
+        "sectors": sectors,
+    }
+    if fell_back:
+        result["warning"] = f"일부 섹터 연동 실패로 예시 데이터 사용: {', '.join(fell_back)}"
+    if live_count:
+        payload = {"_ts": time.time(), "data": result}
+        _sec_mem = payload
+        _sec_last_good = payload
+    return result
+
+
+# 섹터 구성종목 드릴다운 — (key|period) 캐시
+_member_cache: dict[str, dict] = {}
+MEMBER_CACHE_TTL = 60  # 초
+
+
+async def get_sector_members(key: str, period: str) -> dict:
+    """특정 섹터의 대표 구성종목들을 선택 기간으로 조회(등락률 내림차순)."""
+    syms = SECTOR_MEMBERS.get(key, [])
+    if not syms:
+        return {"key": key, "period": period, "members": []}
+
+    cache_key = f"{key}|{period}"
+    hit = _member_cache.get(cache_key)
+    if hit and time.time() - hit["_ts"] < MEMBER_CACHE_TTL:
+        return hit["data"]
+
+    results = await asyncio.gather(*[get_stock_chart(s, period) for s in syms])
+    members = []
+    for sym, r in zip(syms, results):
+        members.append({
+            "code": sym,
+            "held": sym in USER_HELD,
+            "industry": _industry(sym),
+            "value": r.get("value"),
+            "currency": r.get("currency", "USD"),
+            "change_pct": r.get("change_pct", 0.0),
+            "series": r.get("series", []),
+            "times": r.get("times", []),
+        })
+    members.sort(key=lambda m: m["change_pct"], reverse=True)
+    data = {"key": key, "period": period, "members": members}
+    _member_cache[cache_key] = {"_ts": time.time(), "data": data}
+    return data
+
+
+# --------------------------------------------------------------------------- #
+# 섹터 모멘텀 (갈아타기 판단) — 1주/1개월/3개월 수익률 + 가속
+# --------------------------------------------------------------------------- #
+# 주간 환산 상수(거래일 기준): 1개월≈4.345주, 3개월≈13.04주
+_WK_M = 4.345
+_WK_3M = 13.04
+# 수익률 기준점(거래일): 1주=5, 1개월=21, 3개월=63
+_MOM_BACK = {"r1w": 5, "r1m": 21, "r3m": 63}
+
+_mom_cache: dict[str, dict] = {}
+MOM_CACHE_TTL = 60  # 초
+
+
+def _ret(closes: list[float], nback: int) -> float:
+    if len(closes) < 2:
+        return 0.0
+    idx = len(closes) - 1 - nback
+    base = closes[idx] if idx >= 0 else closes[0]
+    last = closes[-1]
+    return round((last / base - 1) * 100, 2) if base else 0.0
+
+
+def _momentum(r1w: float, r1m: float, r3m: float) -> dict:
+    p1w, p1m, p3m = r1w, r1m / _WK_M, r3m / _WK_3M
+    score = round(0.5 * p1w + 0.3 * p1m + 0.2 * p3m, 3)
+    accel = round(p1w - p1m, 3)
+    return {"score": score, "accel": accel}
+
+
+async def get_sector_momentum(key: str) -> dict:
+    """섹터 구성종목의 1주/1개월/3개월 수익률 + 모멘텀 점수/가속(점수 내림차순)."""
+    syms = SECTOR_MEMBERS.get(key, [])
+    if not syms:
+        return {"key": key, "members": []}
+
+    hit = _mom_cache.get(key)
+    if hit and time.time() - hit["_ts"] < MOM_CACHE_TTL:
+        return hit["data"]
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        fetched = await asyncio.gather(
+            *[_fetch_chart(client, s, "1d", "6mo") for s in syms]
+        )
+
+    members = []
+    for sym, (meta, pts) in zip(syms, fetched):
+        closes = [c for _t, c in pts if c is not None]
+        if len(closes) < 2:
+            members.append({
+                "code": sym, "held": sym in USER_HELD, "industry": _industry(sym),
+                "value": None, "currency": "USD", "r1w": 0.0, "r1m": 0.0, "r3m": 0.0,
+                "score": -999, "accel": 0.0, "series": [], "no_data": True,
+            })
+            continue
+        r1w = _ret(closes, _MOM_BACK["r1w"])
+        r1m = _ret(closes, _MOM_BACK["r1m"])
+        r3m = _ret(closes, _MOM_BACK["r3m"])
+        mom = _momentum(r1w, r1m, r3m)
+        spark = closes[-63:] if len(closes) >= 63 else closes
+        if len(spark) > 40:
+            spark = spark[:: (len(spark) // 40) or 1]
+        price = (meta or {}).get("regularMarketPrice") or closes[-1]
+        members.append({
+            "code": sym, "held": sym in USER_HELD, "industry": _industry(sym),
+            "value": round(float(price), 2), "currency": (meta or {}).get("currency", "USD"),
+            "r1w": r1w, "r1m": r1m, "r3m": r3m,
+            "score": mom["score"], "accel": mom["accel"],
+            "series": [round(c, 4) for c in spark],
+        })
+
+    members.sort(key=lambda m: m["score"], reverse=True)
+    for i, m in enumerate(members):
+        m["rank"] = i + 1
+
+    # 산업별 집계(갈아타기: 어느 하위 산업이 강한가)
+    groups: dict[str, list] = {}
+    for m in members:
+        if m.get("no_data"):
+            continue
+        groups.setdefault(m["industry"], []).append(m)
+    industries = []
+    for name, ms in groups.items():
+        n = len(ms)
+        r1w = round(sum(x["r1w"] for x in ms) / n, 2)
+        r1m = round(sum(x["r1m"] for x in ms) / n, 2)
+        r3m = round(sum(x["r3m"] for x in ms) / n, 2)
+        mom = _momentum(r1w, r1m, r3m)
+        industries.append({
+            "name": name, "count": n, "held": any(x["held"] for x in ms),
+            "r1w": r1w, "r1m": r1m, "r3m": r3m,
+            "score": mom["score"], "accel": mom["accel"],
+        })
+    industries.sort(key=lambda x: x["score"], reverse=True)
+
+    data = {"key": key, "members": members, "industries": industries}
+    _mom_cache[key] = {"_ts": time.time(), "data": data}
+    return data
+
+
+# --------------------------------------------------------------------------- #
 # Mock 폴백
 # --------------------------------------------------------------------------- #
-_MOCK_BASE = {"ust10y": 4.28, "ust30y": 4.51, "wti": 78.4, "brent": 82.1, "usdkrw": 1342.0}
+_MOCK_BASE = {"sp500": 5200.0, "ndx100": 18500.0,
+              "ust10y": 4.28, "ust30y": 4.51, "wti": 78.4, "brent": 82.1, "usdkrw": 1342.0,
+              # 섹터 ETF(대략적 시세) — mock 폴백용
+              "xlk": 230.0, "xlc": 105.0, "xlv": 150.0, "xlf": 52.0, "xly": 215.0,
+              "xlp": 82.0, "xle": 92.0, "xli": 140.0, "xlb": 92.0, "xlre": 42.0, "xlu": 82.0}
 _ALL_WINDOWS = {"1D": 78, "2D": 120, "3D": 160, "4D": 200, "5D": 240,
                 **DAILY_WINDOWS, "5Y": 260}
 

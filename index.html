@@ -18,7 +18,8 @@
             </div>
             <nav>
                 <ul>
-                    <li class="active"><a href="#"><i class="fa-solid fa-house"></i> 대시보드</a></li>
+                    <li class="active"><a href="#" data-view="dashboard"><i class="fa-solid fa-house"></i> 대시보드</a></li>
+                    <li><a href="#" data-view="sector"><i class="fa-solid fa-layer-group"></i> 섹터 추이</a></li>
                     <li><a href="#"><i class="fa-solid fa-chart-pie"></i> 포트폴리오</a></li>
                     <li><a href="#"><i class="fa-solid fa-arrow-right-arrow-left"></i> 입출금 내역</a></li>
                     <li><a href="#"><i class="fa-solid fa-gear"></i> 설정</a></li>
@@ -146,6 +147,30 @@
                     </table>
                 </div>
 
+                <!-- 국내주식 (원화) — 메리츠 국내 계좌 -->
+                <div class="domestic-block" id="domestic-block" hidden>
+                    <h3 class="domestic-title">
+                        <i class="fa-solid fa-won-sign"></i> 국내주식 (원화)
+                        <span class="domestic-sub" id="domestic-sub"></span>
+                    </h3>
+                    <div class="table-wrap">
+                        <table class="holdings-table">
+                            <thead>
+                                <tr>
+                                    <th>종목</th>
+                                    <th class="num">보유수량</th>
+                                    <th class="num">매입평균가</th>
+                                    <th class="num">현재가</th>
+                                    <th class="num">평가금액</th>
+                                    <th class="num">평가손익</th>
+                                    <th class="num">수익률</th>
+                                </tr>
+                            </thead>
+                            <tbody id="domestic-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
             </section>
 
             <!-- 보유종목 전체 차트 -->
@@ -156,6 +181,7 @@
                         <div class="period-toggle view-toggle" id="right-view-toggle">
                             <button data-view="charts" class="active">차트</button>
                             <button data-view="rebalance">리밸런싱</button>
+                            <button data-view="trade">매매관리</button>
                         </div>
                         <div class="period-toggle" id="hd-period-toggle">
                             <button data-period="1D" class="active">1일</button>
@@ -170,6 +196,9 @@
                             <button data-period="1Y">1년</button>
                             <button data-period="5Y">5년</button>
                         </div>
+                        <label class="chart-opt" id="opt-targetstop-wrap" title="차트에 목표가·손절가 선 표시">
+                            <input type="checkbox" id="opt-targetstop"> 목표·손절 선
+                        </label>
                     </div>
                 </div>
                 <div class="hc-grid" id="holdings-charts-grid">
@@ -201,6 +230,71 @@
                             <tbody id="rebalance-body"></tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- 매매관리 패널 (목표가/손절가) -->
+                <div class="trade-panel" id="trade-panel" hidden>
+                    <div class="rb-controls">
+                        <span class="ts-ctl">목표 도달 시 매도
+                            <input class="ts-ratio" id="ts-ratio-target" type="number" step="5" min="0" max="100" inputmode="decimal">%</span>
+                        <span class="ts-ctl">손절 도달 시 매도
+                            <input class="ts-ratio" id="ts-ratio-stop" type="number" step="5" min="0" max="100" inputmode="decimal">%</span>
+                        <span class="rb-note">목표·손절 도달 시 매도 수량과 실현손익을 계산합니다(보유 롱 기준). · 참고용(투자 자문 아님)</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="rebalance-table trade-table">
+                            <thead>
+                                <tr>
+                                    <th>종목</th>
+                                    <th class="num">현재가</th>
+                                    <th class="num">평단</th>
+                                    <th class="num">목표가 (평단% · 가격)</th>
+                                    <th class="num">손절가 (평단% · 가격)</th>
+                                    <th class="num">목표 도달 시 매도</th>
+                                    <th class="num">손절 도달 시 매도</th>
+                                    <th>상태</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trade-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 섹터별 추이 (좌측 메뉴 '섹터 추이') -->
+            <section class="sector-page glass-effect" id="sector-page" hidden>
+                <div class="section-head">
+                    <h2>
+                        <i class="fa-solid fa-layer-group"></i> 섹터별 추이
+                        <span class="sector-sub">11개 GICS 섹터 · SPDR ETF 기준</span>
+                    </h2>
+                    <div class="section-actions">
+                        <div class="period-toggle view-toggle" id="sector-view-toggle">
+                            <button data-sview="momentum" class="active">모멘텀</button>
+                            <button data-sview="chart">그래프</button>
+                        </div>
+                        <div class="period-toggle" id="sector-period-toggle" hidden>
+                            <button data-period="1D">1일</button>
+                            <button data-period="5D">5일</button>
+                            <button data-period="1W" class="active">1주</button>
+                            <button data-period="1M">1개월</button>
+                            <button data-period="3M">3개월</button>
+                            <button data-period="6M">6개월</button>
+                            <button data-period="1Y">1년</button>
+                            <button data-period="5Y">5년</button>
+                        </div>
+                        <span class="updated-at" id="sector-updated"></span>
+                    </div>
+                </div>
+
+                <!-- 모멘텀 보드 (갈아타기 판단: 1주·1개월·3개월 + 가속) -->
+                <div class="sector-momentum" id="sector-momentum">
+                    <div class="loading-row">모멘텀을 불러오는 중...</div>
+                </div>
+
+                <!-- 추이 그래프 -->
+                <div class="sector-grid" id="sector-grid" hidden>
+                    <div class="loading-row">섹터 그래프를 불러오는 중...</div>
                 </div>
             </section>
 
