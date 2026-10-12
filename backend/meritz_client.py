@@ -288,7 +288,8 @@ async def domestic_candles(code: str, kind: str, interval_sec: int | None = None
             out.append((ts, _to_float(r.get("oprc")), _to_float(r.get("hprc")),
                         _to_float(r.get("lprc")), _to_float(r.get("stck_clpr")), _to_float(r.get("acml_vol"))))
     else:
-        params = {"mrkt_div_code": "J", "iscd": iscd, "hour_cls_code": str(interval_sec or 300)}
+        # TJ = KRX+NXT(넥스트레이드) 통합 → 장시간(08:00~20:00) 체결 포함
+        params = {"mrkt_div_code": "TJ", "iscd": iscd, "hour_cls_code": str(interval_sec or 300)}
         body = await _get(KRX_CANDLES_MIN, params)
         today = datetime.now(KST).strftime("%Y%m%d")
         out = []

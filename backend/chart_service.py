@@ -65,10 +65,14 @@ async def _refresh(symbol: str, exch: str, mkt: str, interval: str, start: int) 
         pass  # 라이브 실패 → 스토어/야후로 진행
 
 
-def _recent_9am_ts() -> int:
-    """가장 최근 09:00(KST)의 epoch. 09시 이전이면 전날 09시."""
+def _recent_session_start(mkt: str) -> int:
+    """가장 최근 '장중 세션 시작'(KST)의 epoch. 그 시각 이전이면 전날.
+
+    국내(NXT 포함)는 08:00, 해외(주간거래)는 09:00 시작.
+    """
+    hour = 8 if mkt == "domestic" else 9
     now = datetime.now(KST)
-    anchor = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    anchor = now.replace(hour=hour, minute=0, second=0, microsecond=0)
     if now < anchor:
         anchor -= timedelta(days=1)
     return int(anchor.timestamp())
@@ -117,23 +121,23 @@ async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_
     }
 
 
-def _prev_session_close(symbol: str) -> float | None:
-    """현재 장중 세션(가장 최근 09:00 시작)의 '이전 거래일' 일봉 종가 = 전일 종가.
+def _prev_session_close(symbol: str, mkt: str = "overseas") -> float | None:
+    """현재 장중 세션 시작의 '이전 거래일' 일봉 종가 = 전일 종가.
 
-    KST 자정이 아니라 09:00 세션 시작 '날짜'를 기준으로 비교한다. 미국 야간장이
-    KST 자정을 넘겨 진행돼도 세션 도중에 기준이 바뀌지 않고, 매일 09:00에만 리셋된다.
-    (자정 기준이면 세션 도중 전일종가가 바뀌어 등락율이 ~24시간 기준으로 틀어짐)
+    KST 자정이 아니라 세션 시작(국내 08:00/해외 09:00) '날짜'를 기준으로 비교한다.
+    미국 야간장이 KST 자정을 넘겨 진행돼도 세션 도중에 기준이 바뀌지 않고,
+    매일 세션 시작 시각에만 리셋된다. (일봉=정규장 종가 기준)
     """
-    anchor_date = datetime.fromtimestamp(_recent_9am_ts(), KST).date()
+    anchor_date = datetime.fromtimestamp(_recent_session_start(mkt), KST).date()
     for ts, close, *_ in reversed(store.get_candles(symbol, "1d")):
         if close and datetime.fromtimestamp(ts, KST).date() < anchor_date:
             return close
     return None
 
 
-def _apply_prev_close(res: dict, symbol: str) -> dict:
+def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas") -> dict:
     """장중(1h~1D) 등락폭을 전일 정규장 마감 종가 기준으로 덮어쓴다."""
-    pc = _prev_session_close(symbol)
+    pc = _prev_session_close(symbol, mkt)
     price = res.get("value")
     if pc and price:
         res["change"] = round(price - pc, 4)
@@ -181,17 +185,17 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str) -> dict:
     is_intraday = period == "1D" or period in HOUR_MAP  # 1h~1D 는 전일종가 기준 등락폭
 
     if meritz_settings.enabled:
-        # 1D: 오늘 09:00 고정 시작(종목별 시작시각 통일)
+        # 1D: 세션 시작 고정(국내 08:00/해외 09:00)
         if period == "1D":
-            res = await _chart_intraday(symbol, exch, mkt, _recent_9am_ts(), "1D")
+            res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D")
             if res is not None:
-                return _apply_prev_close(res, symbol)
+                return _apply_prev_close(res, symbol, mkt)
         # Nh: 최근 N시간 롤링 윈도우
         elif period in HOUR_MAP:
             anchor = int(time.time()) - HOUR_MAP[period] * 3600
             res = await _chart_intraday(symbol, exch, mkt, anchor, period)
             if res is not None:
-                return _apply_prev_close(res, symbol)
+                return _apply_prev_close(res, symbol, mkt)
 
         # 2D~5D: 일봉(완전) + 오늘 5분봉 결합
         elif period in MULTIDAY_DAYS:
@@ -211,7 +215,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str) -> dict:
     # 스토어에 충분치 않으면 Yahoo 폴백(해외=티커, 국내=6자리→.KS)
     if len(pts) < 2:
         res = await market.get_stock_chart(symbol, period)
-        return _apply_prev_close(res, symbol) if is_intraday else res
+        return _apply_prev_close(res, symbol, mkt) if is_intraday else res
 
     if len(pts) > 400:
         pts = pts[:: (len(pts) // 400) or 1]
@@ -228,4 +232,4 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str) -> dict:
         "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
         **p,
     }
-    return _apply_prev_close(res, symbol) if is_intraday else res
+    return _apply_prev_close(res, symbol, mkt) if is_intraday else res
