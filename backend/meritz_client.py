@@ -11,14 +11,17 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import httpx
 
 from config import BASE_DIR, meritz_settings
+
+KST = timezone(timedelta(hours=9))
 
 TOKEN_CACHE_FILE = BASE_DIR / ".meritz_token_cache.json"
 TOKEN_SAFETY_MARGIN = 60  # 만료 60초 전 재발급
@@ -106,7 +109,7 @@ async def get_access_token() -> str:
 # --------------------------------------------------------------------------- #
 # API 호출
 # --------------------------------------------------------------------------- #
-async def _get(path: str) -> dict:
+async def _get(path: str, params: dict | None = None) -> dict:
     """GET 호출 후 JSON 반환. data 가 없고 오류 응답이면 MeritzError."""
     token = await get_access_token()
     headers = {
@@ -114,23 +117,30 @@ async def _get(path: str) -> dict:
         "mac_address": _mac_address(),
     }
     url = f"{meritz_settings.base_url}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers=headers)
-    except httpx.HTTPError as exc:
-        raise MeritzError(f"요청 네트워크 오류({path}): {exc}") from exc
+    # 초당 호출 한도(EGW00200)는 재시도 가능 → 최대 2회
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(url, headers=headers, params=params)
+        except httpx.HTTPError as exc:
+            raise MeritzError(f"요청 네트워크 오류({path}): {exc}") from exc
 
-    # 메리츠는 업무오류도 HTTP 500으로 내려오므로 상태코드만으로 판단하지 않는다.
-    try:
-        body = resp.json()
-    except ValueError:
-        raise MeritzError(f"응답 파싱 실패({path}, HTTP {resp.status_code}): {resp.text[:300]}")
+        # 메리츠는 업무오류도 HTTP 500으로 내려오므로 상태코드만으로 판단하지 않는다.
+        try:
+            body = resp.json()
+        except ValueError:
+            raise MeritzError(f"응답 파싱 실패({path}, HTTP {resp.status_code}): {resp.text[:300]}")
 
-    if isinstance(body.get("data"), (list, dict)):
-        return body  # 정상(list=목록, dict=단건, 빈 리스트=자료 없음)
-    rsp_cd = body.get("rsp_cd")
-    msg = body.get("rsp_msg") or body.get("rsp_sub_msg") or body.get("error") or resp.text[:200]
-    raise MeritzError(f"조회 오류({path}) rsp_cd={rsp_cd}: {msg}")
+        if isinstance(body.get("data"), (list, dict)):
+            return body  # 정상(list=목록, dict=단건, 빈 리스트=자료 없음)
+        rsp_cd = body.get("rsp_cd")
+        msg = body.get("rsp_msg") or body.get("rsp_sub_msg") or body.get("error") or resp.text[:200]
+        rate_limited = "EGW00200" in str(rsp_cd) or "EGW00200" in str(body) or resp.status_code == 429
+        if attempt == 0 and rate_limited:
+            await asyncio.sleep(0.4)  # 잠깐 쉬고 1회 재시도
+            continue
+        raise MeritzError(f"조회 오류({path}) rsp_cd={rsp_cd}: {msg}")
+    raise MeritzError(f"조회 오류({path}) 재시도 실패")
 
 
 # --------------------------------------------------------------------------- #
@@ -151,7 +161,9 @@ async def get_balance() -> dict:
         qty = _to_float(row.get("rmnd_dqty"))
         if qty <= 0:
             continue
-        code = (row.get("ovrs_stck_symb_iscd") or row.get("iscd", "").split(".")[0] or "").strip()
+        raw_iscd = (row.get("iscd") or "").strip()         # 예: "AMD.OQ"
+        code = (row.get("ovrs_stck_symb_iscd") or raw_iscd.split(".")[0] or "").strip()
+        exch = raw_iscd.split(".")[1] if "." in raw_iscd else ""  # OQ/NY/AX...
         purchase = _to_float(row.get("byov_camt"))        # 매수금액(외화)
         evalu = _to_float(row.get("frcr_vltn_amt"))       # 외화평가금액
         pnl = _to_float(row.get("vltn_prls_camt"))        # 평가손익(외화)
@@ -162,6 +174,8 @@ async def get_balance() -> dict:
         holdings.append({
             "code": code,
             "name": row.get("isnm", ""),
+            "market": "overseas",
+            "exch": exch,
             "quantity": _norm_qty(qty),
             "avg_price": _to_float(row.get("avrg_unpr")),
             "current_price": _to_float(row.get("psnt_prc")),
@@ -199,6 +213,92 @@ async def get_balance() -> dict:
         },
         "holdings": holdings,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 캔들(시세추이) — 보유종목 차트/누적 저장용
+# --------------------------------------------------------------------------- #
+OVS_CANDLES_DAYS = "/market/v1/overseas/candles/days"
+OVS_CANDLES_MIN = "/market/v1/overseas/candles/minutes"
+KRX_CANDLES_DAYS = "/market/v1/candles/days"
+KRX_CANDLES_MIN = "/market/v1/candles/minutes"
+
+
+def _ts_from_date(yyyymmdd: str) -> int | None:
+    try:
+        return int(datetime.strptime(yyyymmdd, "%Y%m%d").replace(tzinfo=KST).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _ts_from_dt(yyyymmdd: str, hhmmss: str) -> int | None:
+    try:
+        hhmmss = (hhmmss or "").zfill(6)[:6]
+        return int(datetime.strptime(yyyymmdd + hhmmss, "%Y%m%d%H%M%S").replace(tzinfo=KST).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+async def overseas_candles(symbol: str, exch: str, kind: str,
+                           interval_sec: int | None = None,
+                           from_: str | None = None, to: str | None = None) -> list[tuple]:
+    """해외주식 캔들 → [(ts, open, high, low, close, vol)] 시간오름차순.
+
+    kind='days'  : 일봉(from/to YYYYMMDD, 미지정 시 최근 40). dely=0(실시간), mod=1
+    kind='minutes': 분봉(interval_sec 간격, 최근 40봉 고정)
+    """
+    if kind == "days":
+        params = {"mrkt_div_code": "OV", "mrkt_cls_code": exch, "iscd": symbol,
+                  "dely_rltm_cls_code": "0", "mod_stpr_cls_code": "1"}
+        if from_ and to:
+            params["from"] = from_; params["to"] = to
+        body = await _get(OVS_CANDLES_DAYS, params)
+        out = []
+        for r in body.get("data", []):
+            ts = _ts_from_date(r.get("date"))
+            out.append((ts, _to_float(r.get("oprc")), _to_float(r.get("hprc")),
+                        _to_float(r.get("lprc")), _to_float(r.get("prpr")), _to_float(r.get("acml_vol"))))
+    else:
+        params = {"mrkt_div_code": "OV", "mrkt_cls_code": exch, "iscd": symbol,
+                  "dely_rltm_cls_code": "0", "hour_cls_code": str(interval_sec or 300)}
+        body = await _get(OVS_CANDLES_MIN, params)
+        out = []
+        for r in body.get("data", []):
+            ts = _ts_from_dt(r.get("korea_date"), r.get("korea_hour"))
+            out.append((ts, _to_float(r.get("oprc")), _to_float(r.get("hprc")),
+                        _to_float(r.get("lprc")), _to_float(r.get("prpr")),
+                        _to_float(r.get("cntg_vol") or r.get("acml_vol"))))
+    out = [b for b in out if b[0] is not None]
+    out.sort(key=lambda b: b[0])
+    return out
+
+
+async def domestic_candles(code: str, kind: str, interval_sec: int | None = None,
+                           from_: str | None = None, to: str | None = None) -> list[tuple]:
+    """국내주식 캔들 → [(ts, open, high, low, close, vol)]. iscd 는 A+6자리."""
+    iscd = code if code[:1] == "A" else "A" + code
+    if kind == "days":
+        params = {"mrkt_div_code": "J", "iscd": iscd, "mod_stpr_cls_code": "0"}
+        if from_ and to:
+            params["from"] = from_; params["to"] = to
+        body = await _get(KRX_CANDLES_DAYS, params)
+        out = []
+        for r in body.get("data", []):
+            ts = _ts_from_date(r.get("date"))
+            out.append((ts, _to_float(r.get("oprc")), _to_float(r.get("hprc")),
+                        _to_float(r.get("lprc")), _to_float(r.get("stck_clpr")), _to_float(r.get("acml_vol"))))
+    else:
+        params = {"mrkt_div_code": "J", "iscd": iscd, "hour_cls_code": str(interval_sec or 300)}
+        body = await _get(KRX_CANDLES_MIN, params)
+        today = datetime.now(KST).strftime("%Y%m%d")
+        out = []
+        for r in body.get("data", []):
+            ts = _ts_from_dt(r.get("cntg_date") or today, r.get("cntg_hour"))
+            out.append((ts, _to_float(r.get("oprc")), _to_float(r.get("hprc")),
+                        _to_float(r.get("lprc")), _to_float(r.get("stck_prpr")), _to_float(r.get("cntg_vol"))))
+    out = [b for b in out if b[0] is not None]
+    out.sort(key=lambda b: b[0])
+    return out
 
 
 def _is_domestic(iscd: str) -> bool:

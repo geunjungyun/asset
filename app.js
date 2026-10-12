@@ -306,13 +306,16 @@ let lastChartsData = null;  // 마지막 조회 결과(목표/손절 변경 시 
 async function loadHoldingsCharts() {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
+    const reqPeriod = holdingPeriod;  // 요청 시점의 기간
     try {
-        const d = await fetchJSON(`/api/account/holdings-charts?period=${holdingPeriod}`);
+        const d = await fetchJSON(`/api/account/holdings-charts?period=${reqPeriod}`);
+        if (reqPeriod !== holdingPeriod) return;  // 더 최신 기간 요청이 있으면 이 응답은 버림(레이스 방지)
         lastChartsData = d;
         renderHoldingsChartsGrid(d);
     } catch (err) {
         console.error(err);
-        grid.innerHTML = '<div class="loading-row">차트를 불러올 수 없습니다.</div>';
+        if (reqPeriod === holdingPeriod)
+            grid.innerHTML = '<div class="loading-row">차트를 불러올 수 없습니다.</div>';
     }
 }
 
@@ -327,7 +330,7 @@ function renderHoldingsChartsGrid(d) {
         const held = (holdingsList || []).find(h => h.code === ch.code);
         // 기준선: 평단(회색) + 목표(초록) + 손절(빨강)
         const lines = [];
-        if (held && Number.isFinite(Number(held.avg_price)))
+        if (showAvg && held && Number.isFinite(Number(held.avg_price)))
             lines.push({ value: Number(held.avg_price), label: '평단', kind: 'avg' });
         const ts = targetStops[ch.code] || {};
         if (showTargetStop) {   // 옵션: 목표·손절 선 표시
@@ -370,13 +373,17 @@ function initHoldingToggle() {
     scheduleHoldingRefresh();
 }
 
-// 실시간 탭일 때만 주기적으로 전체 차트 갱신
+// 장중 기간(1h~5D)일 때 주기 갱신: 장중 10초, 장 밖 ≈60초
+let holdingTick = 0;
 function scheduleHoldingRefresh() {
     if (holdingTimer) { clearInterval(holdingTimer); holdingTimer = null; }
-    if (/^[1-5]D$/.test(holdingPeriod)) {
+    if (/^[1-5]D$/.test(holdingPeriod) || /^\d{1,2}h$/.test(holdingPeriod)) {
+        holdingTick = 0;
         holdingTimer = setInterval(() => {
-            if (!document.hidden) loadHoldingsCharts();
-        }, 30000);
+            if (document.hidden) return;
+            holdingTick++;
+            if (isMarketActive() || holdingTick % IDLE_EVERY === 0) loadHoldingsCharts();
+        }, LIVE_REFRESH_MS);
     }
 }
 
@@ -398,6 +405,11 @@ function saveTargetStops() { try { localStorage.setItem(TS_KEY, JSON.stringify(t
 const OPT_TS_KEY = 'assetpro.showTargetStop';
 let showTargetStop = true;
 try { const v = localStorage.getItem(OPT_TS_KEY); if (v !== null) showTargetStop = v === '1'; } catch (_) {}
+
+// 차트에 평단(매입평균가) 선 표시 옵션
+const OPT_AVG_KEY = 'assetpro.showAvg';
+let showAvg = true;
+try { const v = localStorage.getItem(OPT_AVG_KEY); if (v !== null) showAvg = v === '1'; } catch (_) {}
 
 // 도달 시 매도 비율(%) — 목표(익절)/손절
 const SR_KEY = 'assetpro.sellRatios';
@@ -439,7 +451,7 @@ function initRebalance() {
         document.getElementById('rebalance-panel').hidden = rightView !== 'rebalance';
         document.getElementById('trade-panel').hidden = rightView !== 'trade';
         document.getElementById('hd-period-toggle').style.display = charts ? '' : 'none';
-        const optw = document.getElementById('opt-targetstop-wrap');
+        const optw = document.getElementById('chart-opts');
         if (optw) optw.style.display = charts ? '' : 'none';
         document.getElementById('right-title').textContent = RIGHT_TITLES[rightView] || '보유종목 차트';
         if (rightView === 'rebalance') renderRebalance();
@@ -464,6 +476,17 @@ function initRebalance() {
         optCb.addEventListener('change', () => {
             showTargetStop = optCb.checked;
             try { localStorage.setItem(OPT_TS_KEY, showTargetStop ? '1' : '0'); } catch (_) {}
+            if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
+        });
+    }
+
+    // 평단 선 표시 옵션
+    const avgCb = document.getElementById('opt-avg');
+    if (avgCb) {
+        avgCb.checked = showAvg;
+        avgCb.addEventListener('change', () => {
+            showAvg = avgCb.checked;
+            try { localStorage.setItem(OPT_AVG_KEY, showAvg ? '1' : '0'); } catch (_) {}
             if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
         });
     }
@@ -626,7 +649,7 @@ function renderTradeMgmt() {
 // 시장 지표 (국채금리 / 유가 / 환율)
 // ---------------------------------------------------------------------------
 let marketData = null;
-let currentPeriod = '1D';
+let currentPeriod = '1W';   // 지표 그래프 초기 기간(상세)
 let currentView = 'dashboard';  // 좌측 메뉴 보기: 'dashboard' | 'sector'
 let sectorPeriod = '1W';        // 섹터 추이 페이지 기간(기본 1주)
 let sectorData = null;          // /api/sectors 결과 (섹터 ETF 11개)
@@ -656,6 +679,18 @@ const pctCell = (v) => {
     return `<td class="num ${up ? 'positive' : 'negative'}">${up ? '+' : ''}${(v || 0).toFixed(2)}%</td>`;
 };
 const MARKET_REFRESH_MS = 60000;  // 스냅샷(금리/일봉) 폴링 주기
+const LIVE_REFRESH_MS = 10000;    // 장중 라이브 갱신(계좌·장중차트) 기본 틱
+const IDLE_EVERY = 6;             // 장 밖에는 6틱(≈60초)마다 한 번만 갱신
+
+// 장중 여부(대략): 주말 데드존(토 06시 이후 ~ 월 09시 이전) 외에는 활성.
+// 평일은 주간거래(낮)+프리/정규/애프터로 거의 24시간 체결이 있다.
+function isMarketActive() {
+    const d = new Date(), day = d.getDay(), h = d.getHours();
+    if (day === 0) return false;              // 일요일
+    if (day === 6 && h >= 6) return false;     // 토요일 오전 6시 이후
+    if (day === 1 && h < 9) return false;      // 월요일 오전 9시 이전
+    return true;
+}
 
 // KIS 실시간이 담당하는 지표(하이브리드). 나머지(금리)는 Yahoo.
 const KIS_KEYS = new Set(['wti', 'brent', 'usdkrw']);
@@ -1218,6 +1253,16 @@ function axisLabels(times, count = 3) {
     return labels.map(t => `<span>${t}</span>`).join('');
 }
 
+// 계좌 요약·보유 표만 다시 불러와 갱신 (자동 새로고침용, 차트/거래내역 제외)
+async function refreshAccount() {
+    try {
+        renderAccount(await fetchJSON('/api/account/status'));
+        loadDomestic();
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 // 시장 지표만 다시 불러와 갱신 (자동 새로고침용)
 async function refreshMarket() {
     try {
@@ -1365,4 +1410,12 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshMarket();
         if (currentView === 'sector') loadSectors(true);  // 섹터 보기면 섹터도 갱신
     }, MARKET_REFRESH_MS);
+
+    // 계좌 요약·보유 표 자동 갱신: 장중 10초, 장 밖 ≈60초
+    let accountTick = 0;
+    setInterval(() => {
+        if (document.hidden) return;
+        accountTick++;
+        if (isMarketActive() || accountTick % IDLE_EVERY === 0) refreshAccount();
+    }, LIVE_REFRESH_MS);
 });

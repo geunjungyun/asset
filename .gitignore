@@ -11,6 +11,9 @@ backend/.env
 backend/.token_cache.json
 backend/.meritz_token_cache.json
 backend/.market_cache.json
+backend/.candles.db
+backend/.candles.db-wal
+backend/.candles.db-shm
 
 # ── IDE ──
 .vscode/

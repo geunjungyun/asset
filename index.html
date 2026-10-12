@@ -37,12 +37,12 @@
                     </h2>
                     <div class="section-actions">
                         <div class="period-toggle" id="period-toggle">
-                            <button data-period="1D" class="active">1일</button>
+                            <button data-period="1D">1일</button>
                             <button data-period="2D">2일</button>
                             <button data-period="3D">3일</button>
                             <button data-period="4D">4일</button>
                             <button data-period="5D">5일</button>
-                            <button data-period="1W">1주</button>
+                            <button data-period="1W" class="active">1주</button>
                             <button data-period="1M">1개월</button>
                             <button data-period="3M">3개월</button>
                             <button data-period="6M">6개월</button>
@@ -184,6 +184,14 @@
                             <button data-view="trade">매매관리</button>
                         </div>
                         <div class="period-toggle" id="hd-period-toggle">
+                            <button data-period="1h">1h</button>
+                            <button data-period="2h">2h</button>
+                            <button data-period="3h">3h</button>
+                            <button data-period="4h">4h</button>
+                            <button data-period="6h">6h</button>
+                            <button data-period="8h">8h</button>
+                            <button data-period="10h">10h</button>
+                            <button data-period="12h">12h</button>
                             <button data-period="1D" class="active">1일</button>
                             <button data-period="2D">2일</button>
                             <button data-period="3D">3일</button>
@@ -196,9 +204,14 @@
                             <button data-period="1Y">1년</button>
                             <button data-period="5Y">5년</button>
                         </div>
-                        <label class="chart-opt" id="opt-targetstop-wrap" title="차트에 목표가·손절가 선 표시">
-                            <input type="checkbox" id="opt-targetstop"> 목표·손절 선
-                        </label>
+                        <span class="chart-opts" id="chart-opts">
+                            <label class="chart-opt" title="차트에 평단(매입평균가) 선 표시">
+                                <input type="checkbox" id="opt-avg"> 평단
+                            </label>
+                            <label class="chart-opt" title="차트에 목표가·손절가 선 표시">
+                                <input type="checkbox" id="opt-targetstop"> 목표·손절 선
+                            </label>
+                        </span>
                     </div>
                 </div>
                 <div class="hc-grid" id="holdings-charts-grid">

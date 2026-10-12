@@ -1,0 +1,227 @@
+"""보유종목 차트 서비스.
+
+우선순위: 로컬 SQLite 누적본 → (오래되면) 메리츠 라이브 조회·병합 → 그래도 없으면 Yahoo 폴백.
+- 1D~5D : 5분봉(분봉 누적본). 메리츠는 한 번에 40봉(≈3.3h)이라 폴러로 쌓은 로컬본을 사용.
+- 1W~5Y : 일봉(메리츠 from/to 로 완전 적재된 누적본).
+프론트가 쓰는 형식({series, times, change, change_pct, value})으로 반환(market._period 재사용).
+"""
+from __future__ import annotations
+
+import time
+from datetime import datetime, timedelta
+
+import market
+import candle_store as store
+import meritz_client as meritz
+from config import meritz_settings
+from meritz_client import KST
+
+# period -> (interval, lookback_days, 시각 라벨 포맷)
+PERIOD_PLAN = {
+    "1D": ("5m", 1, "%H:%M"),
+    "2D": ("5m", 2, "%m/%d"),
+    "3D": ("5m", 3, "%m/%d"),
+    "4D": ("5m", 4, "%m/%d"),
+    "5D": ("5m", 5, "%m/%d"),
+    "1W": ("1d", 8, "%m/%d"),
+    "1M": ("1d", 33, "%m/%d"),
+    "3M": ("1d", 95, "%m/%d"),
+    "6M": ("1d", 190, "%m/%d"),
+    "1Y": ("1d", 372, "%y/%m"),
+    "5Y": ("1d", 1850, "%y/%m"),
+}
+
+# 스토어가 이보다 오래됐으면 라이브로 갱신
+FRESH_5M = 900       # 15분
+FRESH_1D = 2 * 86400  # 2일
+
+
+async def _refresh(symbol: str, exch: str, mkt: str, interval: str, start: int) -> None:
+    """필요 시 메리츠 라이브로 받아 스토어에 병합."""
+    if not meritz_settings.enabled:
+        return
+    now = int(time.time())
+    try:
+        if interval == "5m":
+            rows = store.get_candles(symbol, "5m", start_ts=now - FRESH_5M)
+            if rows:
+                return  # 최근 15분 내 데이터 있으면 생략(폴러가 관리)
+            bars = (await meritz.overseas_candles(symbol, exch, "minutes", 300)
+                    if mkt == "overseas"
+                    else await meritz.domestic_candles(symbol, "minutes", 300))
+            store.upsert_candles(symbol, "5m", bars)
+        else:  # 1d
+            latest = store.get_candles(symbol, "1d", start_ts=now - FRESH_1D)
+            have = store.has_candles(symbol, "1d", start_ts=start)
+            if latest and have >= 2:
+                return  # 최신 + 창 데이터 충분
+            frm = datetime.fromtimestamp(start, KST).strftime("%Y%m%d")
+            to = datetime.now(KST).strftime("%Y%m%d")
+            bars = (await meritz.overseas_candles(symbol, exch, "days", from_=frm, to=to)
+                    if mkt == "overseas"
+                    else await meritz.domestic_candles(symbol, "days", from_=frm, to=to))
+            store.upsert_candles(symbol, "1d", bars)
+    except meritz.MeritzError:
+        pass  # 라이브 실패 → 스토어/야후로 진행
+
+
+def _recent_9am_ts() -> int:
+    """가장 최근 09:00(KST)의 epoch. 09시 이전이면 전날 09시."""
+    now = datetime.now(KST)
+    anchor = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    if now < anchor:
+        anchor -= timedelta(days=1)
+    return int(anchor.timestamp())
+
+
+def _intraday_interval(span_sec: int) -> int:
+    """09:00~현재를 40봉으로 덮는 가장 촘촘한 간격(초)."""
+    if span_sec <= 3 * 3600:
+        return 300    # 5분
+    if span_sec <= 10 * 3600:
+        return 900    # 15분
+    if span_sec <= 20 * 3600:
+        return 1800   # 30분
+    return 3600       # 1시간
+
+
+# 시간 단위(Nh) 기간 → 시간 수
+HOUR_MAP = {"1h": 1, "2h": 2, "3h": 3, "4h": 4, "6h": 6, "8h": 8, "10h": 10, "12h": 12}
+# 멀티데이(2D~5D) 기간 → 일 수
+MULTIDAY_DAYS = {"2D": 2, "3D": 3, "4D": 4, "5D": 5}
+
+
+async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_label: str) -> dict | None:
+    """장중(분봉) 차트. anchor(시작 epoch)부터 현재까지. 간격 자동 조절."""
+    span = int(time.time()) - anchor
+    interval_sec = _intraday_interval(span)
+    try:
+        bars = (await meritz.overseas_candles(symbol, exch, "minutes", interval_sec)
+                if mkt == "overseas"
+                else await meritz.domestic_candles(symbol, "minutes", interval_sec))
+    except meritz.MeritzError:
+        return None
+    # 메리츠 분봉은 '봉 종료시각' 기준(09:00~09:15 → "09:15"). '봉 시작시각'으로 당겨
+    # 표기하면 첫 봉이 정각(예: 09:00)으로 시작한다.
+    pts = [(ts - interval_sec, c) for ts, o, h, l, c, v in bars
+           if c and (ts - interval_sec) >= anchor]
+    if len(pts) < 2:
+        return None
+    price = pts[-1][1]
+    p = market._period(pts, price, "%H:%M")
+    return {
+        "mode": "live", "code": symbol, "period": period_label,
+        "currency": "USD" if mkt == "overseas" else "KRW",
+        "value": round(price, 2), "source": "meritz",
+        "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), **p,
+    }
+
+
+def _prev_session_close(symbol: str) -> float | None:
+    """오늘(KST) 이전의 가장 최근 일봉 종가 = 전일 정규장 마감가."""
+    now_kst = datetime.now(KST)
+    today_midnight = int(now_kst.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    for ts, close, *_ in reversed(store.get_candles(symbol, "1d")):
+        if ts < today_midnight and close:
+            return close
+    return None
+
+
+def _apply_prev_close(res: dict, symbol: str) -> dict:
+    """장중(1h~1D) 등락폭을 전일 정규장 마감 종가 기준으로 덮어쓴다."""
+    pc = _prev_session_close(symbol)
+    price = res.get("value")
+    if pc and price:
+        res["change"] = round(price - pc, 4)
+        res["change_pct"] = round((price - pc) / pc * 100, 2)
+        res["prev_close"] = round(pc, 4)
+        res["baseline"] = "prev_close"
+    return res
+
+
+async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict | None:
+    """2D~5D: 최근 N거래일 일봉(완전) + 오늘 누적 5분봉을 이어붙여 그린다.
+
+    누적 초기엔 일봉으로 멀티데이 추세를 보여주고, 5분봉이 쌓일수록 최근 구간이 촘촘해진다.
+    """
+    days = MULTIDAY_DAYS[period]
+    now = int(time.time())
+    start = now - days * 86400
+
+    # 최근 5분봉 신선화 + 일봉 보장(둘 다 대개 스토어 적중 → 추가 호출 없음)
+    await _refresh(symbol, exch, mkt, "5m", start)
+    await _refresh(symbol, exch, mkt, "1d", now - 40 * 86400)
+
+    pts_5m = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "5m", start_ts=start) if c]
+    cutoff = pts_5m[0][0] if pts_5m else now
+    # 5분봉이 시작되기 전까지의 일봉 중 최근 N개
+    daily = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "1d") if c and ts < cutoff][-days:]
+
+    combined = daily + pts_5m
+    if len(combined) < 2:
+        return None  # → 상위에서 Yahoo 폴백
+
+    if len(combined) > 400:
+        combined = combined[:: (len(combined) // 400) or 1]
+    price = combined[-1][1]
+    p = market._period(combined, price, "%m/%d")
+    return {
+        "mode": "live", "code": symbol, "period": period,
+        "currency": "USD" if mkt == "overseas" else "KRW",
+        "value": round(price, 2), "source": "meritz",
+        "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), **p,
+    }
+
+
+async def holding_chart(symbol: str, exch: str, mkt: str, period: str) -> dict:
+    is_intraday = period == "1D" or period in HOUR_MAP  # 1h~1D 는 전일종가 기준 등락폭
+
+    if meritz_settings.enabled:
+        # 1D: 오늘 09:00 고정 시작(종목별 시작시각 통일)
+        if period == "1D":
+            res = await _chart_intraday(symbol, exch, mkt, _recent_9am_ts(), "1D")
+            if res is not None:
+                return _apply_prev_close(res, symbol)
+        # Nh: 최근 N시간 롤링 윈도우
+        elif period in HOUR_MAP:
+            anchor = int(time.time()) - HOUR_MAP[period] * 3600
+            res = await _chart_intraday(symbol, exch, mkt, anchor, period)
+            if res is not None:
+                return _apply_prev_close(res, symbol)
+
+        # 2D~5D: 일봉(완전) + 오늘 5분봉 결합
+        elif period in MULTIDAY_DAYS:
+            res = await _chart_multiday(symbol, exch, mkt, period)
+            if res is not None:
+                return res
+
+    interval, days, fmt = PERIOD_PLAN.get(period, PERIOD_PLAN["1D"])
+    now = int(time.time())
+    start = now - days * 86400
+
+    await _refresh(symbol, exch, mkt, interval, start)
+
+    rows = store.get_candles(symbol, interval, start_ts=start)
+    pts = [(ts, close) for ts, close, *_ in rows if close]
+
+    # 스토어에 충분치 않으면 Yahoo 폴백(해외=티커, 국내=6자리→.KS)
+    if len(pts) < 2:
+        res = await market.get_stock_chart(symbol, period)
+        return _apply_prev_close(res, symbol) if is_intraday else res
+
+    if len(pts) > 400:
+        pts = pts[:: (len(pts) // 400) or 1]
+
+    price = pts[-1][1]
+    p = market._period(pts, price, fmt)
+    res = {
+        "mode": "live",
+        "code": symbol,
+        "period": period,
+        "currency": "USD" if mkt == "overseas" else "KRW",
+        "value": round(price, 2),
+        "source": "meritz",
+        "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
+        **p,
+    }
+    return _apply_prev_close(res, symbol) if is_intraday else res

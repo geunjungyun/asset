@@ -231,6 +231,14 @@ async def _build(client: httpx.AsyncClient, meta_row: tuple) -> dict | None:
             window[-1] = (window[-1][0], price)  # 끝점 값을 현재가로
         periods[label] = _period(window or [(None, price)], price, PERIOD_FMT[label])
 
+    # 1주: 일봉 5점 대신 5일치 장중 5분봉으로 상세 표현(override)
+    if intra and len(intra) >= 2:
+        wk = intra[:]
+        wk[-1] = (wk[-1][0], price)
+        if len(wk) > 300:          # 과다 포인트 다운샘플
+            wk = wk[:: (len(wk) // 300) or 1]
+        periods["1W"] = _period(wk, price, PERIOD_FMT["1W"])
+
     # 5년: 전체 일봉(5y)을 약 250포인트로 다운샘플(≈주봉)
     if daily:
         step = max(1, len(daily) // 250)

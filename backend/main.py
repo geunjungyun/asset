@@ -26,6 +26,9 @@ from fastapi.staticfiles import StaticFiles
 import kis_client
 import market
 import meritz_client
+import candle_store
+import chart_service
+import collector
 from config import settings, meritz_settings
 from kis_ws import engine
 
@@ -35,7 +38,13 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await engine.start()      # KIS 실시간(또는 시뮬레이터) 엔진 기동
+    candle_store.init_db()    # 캔들 저장소 준비
+    collector_task = None
+    if meritz_settings.enabled:
+        collector_task = asyncio.create_task(collector.run_collector())  # 캔들 누적 수집
     yield
+    if collector_task:
+        collector_task.cancel()
     await engine.stop()
 
 
@@ -116,7 +125,27 @@ async def holding_chart(code: str, period: str = "realtime") -> dict:
 
 @app.get("/api/account/holdings-charts")
 async def holdings_charts(period: str = "realtime") -> dict:
-    """보유 계좌 전체 종목의 차트를 한 번에 (동시 조회)."""
+    """보유 계좌 전체 종목의 차트를 한 번에.
+
+    메리츠 연동 시: 해외+국내 보유종목을 메리츠 캔들(로컬 누적본, 24h)로. 실패 시 Yahoo 폴백.
+    미연동 시: 기존 mock 보유종목을 Yahoo 로.
+    """
+    if meritz_settings.enabled:
+        holdings = await collector.chartable_holdings()
+        if holdings:
+            # 동시 호출을 4개로 제한해 분봉 API 초당 한도(TPS 10/s)를 넘지 않게 한다.
+            sem = asyncio.Semaphore(4)
+
+            async def _one(h):
+                async with sem:
+                    return await chart_service.holding_chart(h["symbol"], h["exch"], h["market"], period)
+
+            charts = await asyncio.gather(*[_one(h) for h in holdings])
+            for ch, h in zip(charts, holdings):
+                ch["name"] = h.get("name", ch.get("code"))
+            return {"period": period, "currency": "USD", "charts": charts}
+
+    # 폴백: mock(또는 KIS) 보유종목 → Yahoo
     try:
         bal = await kis_client.inquire_balance()
     except kis_client.KisError:
@@ -128,6 +157,12 @@ async def holdings_charts(period: str = "realtime") -> dict:
     for ch, h in zip(charts, holdings):
         ch["name"] = h.get("name", ch.get("code"))
     return {"period": period, "currency": bal.get("currency", "KRW"), "charts": charts}
+
+
+@app.get("/api/candles/stats")
+async def candles_stats() -> dict:
+    """캔들 누적 저장소 진단(종목·간격별 행수/기간)."""
+    return candle_store.stats()
 
 
 @app.get("/api/market")
