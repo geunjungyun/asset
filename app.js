@@ -139,19 +139,29 @@ function renderAccount(data) {
 let holdingsList = [];
 let domesticList = [];   // 국내주식(원화) 보유목록 — 차트 평단/수익률 조회용
 
+// 보유종목 표시 순서(고정). 목록에 없는 코드는 뒤로.
+const HOLDING_ORDER = ['SNDK', 'MU', 'MRVL', 'AMD', 'GOOGL', 'NVDA', 'AMGN', 'LLY', '000660'];
+function holdingOrderIdx(code) {
+    const i = HOLDING_ORDER.indexOf(code);
+    return i < 0 ? 999 : i;
+}
+function sortByHoldingOrder(arr, getCode) {
+    return (arr || []).slice().sort((a, b) => holdingOrderIdx(getCode(a)) - holdingOrderIdx(getCode(b)));
+}
+
 function renderHoldings(holdings) {
     const body = document.getElementById('holdings-body');
     body.innerHTML = '';
-    holdingsList = holdings || [];
+    holdingsList = sortByHoldingOrder(holdings || [], h => h.code);   // 지정 순서로 정렬
     ensureTargetStopDefaults();   // 목표/손절 초기값(평단 ±15%)
 
-    if (!holdings.length) {
+    if (!holdingsList.length) {
         body.innerHTML = '<tr><td colspan="7" class="loading-row">보유 중인 종목이 없습니다.</td></tr>';
         renderHoldingsPie([]);
         return;
     }
 
-    holdings.forEach(h => {
+    holdingsList.forEach(h => {
         const up = h.eval_pnl >= 0;
         const cls = up ? 'positive' : 'negative';
         const tr = document.createElement('tr');
@@ -174,7 +184,7 @@ function renderHoldings(holdings) {
     });
 
     updatePnlKrw();
-    renderHoldingsPie(holdings);
+    renderHoldingsPie(holdingsList);
 }
 
 // 국내주식(원화) 섹션 — 메리츠 국내 계좌
@@ -325,7 +335,7 @@ function renderHoldingsChartsGrid(d) {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid || !d) return;
     grid.innerHTML = '';
-    (d.charts || []).forEach(ch => {
+    sortByHoldingOrder(d.charts || [], ch => ch.code).forEach(ch => {
         const up = (ch.change || 0) >= 0;
         const cur = ch.currency || accountCurrency;
         const cls = up ? 'positive' : 'negative';
