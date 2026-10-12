@@ -137,6 +137,7 @@ function renderAccount(data) {
 }
 
 let holdingsList = [];
+let domesticList = [];   // 국내주식(원화) 보유목록 — 차트 평단/수익률 조회용
 
 function renderHoldings(holdings) {
     const body = document.getElementById('holdings-body');
@@ -182,6 +183,7 @@ function renderDomestic(d) {
     const body = document.getElementById('domestic-body');
     if (!block || !body) return;
     const hold = (d && d.holdings) || [];
+    domesticList = hold;   // 차트에서 평단/수익률 조회용
     if (!hold.length) { block.hidden = true; return; }
     body.innerHTML = '';
     hold.forEach(h => {
@@ -327,7 +329,14 @@ function renderHoldingsChartsGrid(d) {
         const up = (ch.change || 0) >= 0;
         const cur = ch.currency || accountCurrency;
         const cls = up ? 'positive' : 'negative';
-        const held = (holdingsList || []).find(h => h.code === ch.code);
+        const held = (holdingsList || []).find(h => h.code === ch.code)
+                  || (domesticList || []).find(h => h.code === ch.code);
+        // 전체 수익률(매입평균가 대비). 계좌 pnl_rate 우선, 없으면 평단으로 계산.
+        let totRet = null;
+        if (held && held.pnl_rate != null) totRet = Number(held.pnl_rate);
+        else if (held && Number(held.avg_price) > 0 && ch.value)
+            totRet = (ch.value - Number(held.avg_price)) / Number(held.avg_price) * 100;
+        const retCls = (totRet || 0) >= 0 ? 'positive' : 'negative';
         // 기준선: 평단(회색) + 목표(초록) + 손절(빨강)
         const lines = [];
         if (showAvg && held && Number.isFinite(Number(held.avg_price)))
@@ -349,6 +358,7 @@ function renderHoldingsChartsGrid(d) {
             <div class="hc-valrow">
                 <span class="hc-val">${money(ch.value, cur)}</span>
                 <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
+                ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
             </div>
             ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines)}
         `;

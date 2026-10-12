@@ -740,6 +740,9 @@ header {
 .hc-chg { font-size: 0.78rem; font-weight: 600; }
 .hc-chg.positive { color: var(--positive); }
 .hc-chg.negative { color: var(--negative); }
+.hc-ret { font-size: 0.72rem; font-weight: 600; padding-left: 0.5rem; border-left: 1px solid var(--glass-border); }
+.hc-ret.positive { color: var(--positive); }
+.hc-ret.negative { color: var(--negative); }
 
 /* ===== 울트라와이드: 스크롤 없이 한 화면 (≥1700px) ===== */
 @media (min-width: 1700px) {
@@ -763,7 +766,8 @@ header {
     .kis-section .section-head { flex-wrap: wrap; gap: 1rem 1.5rem; }
     .kis-section .section-head h2 { flex: 0 0 auto; }
     .kis-section .header-assets { flex: 1 1 auto; justify-content: flex-start; gap: 1.25rem; margin: 0; }
-    .kis-section .header-assets .ha-value { font-size: 1.25rem; }
+    .kis-section .header-assets .ha-value { font-size: 1.08rem; }
+    .kis-section .header-assets .ha-krw { font-size: 0.7rem; }
 
     /* 시장 지표: 주식 평가금액 옆(상단 우측) — 최소 높이 가로 바 */
     .market-section { grid-area: market; margin-bottom: 0; min-height: 0; padding: 0.7rem 1rem; }
@@ -815,14 +819,28 @@ header {
     .market-charts-section .spark { height: 110px; }
     .market-charts-section .spark-axis { font-size: 0.58rem; }
 
-    .kis-section    { grid-area: account; margin-bottom: 0; min-height: 0; overflow: auto; }
-    .kis-section .pie-svg { width: 160px; height: 160px; }
+    /* 계좌 섹션: 세로 flex로, 보유 표가 남는 공간을 흡수 → 섹션 자체는 절대 넘치지 않음 */
+    .kis-section    { grid-area: account; margin-bottom: 0; min-height: 0;
+        display: flex; flex-direction: column; overflow: hidden; }
+    .kis-section > .section-head,
+    .kis-section > .kis-overview,
+    .kis-section > .domestic-block { flex: 0 0 auto; }
+    .kis-section > .table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    /* 기준 시각 + 새로고침 버튼: 버튼을 글자 아래로 */
+    .kis-section .section-actions { flex-direction: column; align-items: flex-end; gap: 0.3rem; }
+    .kis-section .pie-svg { width: 116px; height: 116px; }
     .kis-section .pie-section { margin: 0; }
-    .kis-overview { margin-bottom: 1.2rem; }
+    .kis-overview { margin-bottom: 0.5rem; }
+    /* 요약 카드 압축 */
+    .kis-section .kis-summary { gap: 0.55rem; margin-bottom: 0; }
+    .kis-section .kis-stat { padding: 0.55rem 0.8rem; gap: 0.15rem; border-radius: 10px; }
+    .kis-section .kis-stat .value { font-size: 1rem; }
+    .kis-section .kis-stat .label { font-size: 0.72rem; }
+    .kis-section .pie-title { font-size: 0.85rem; margin-bottom: 0.3rem; }
 
-    /* 보유종목 표: 여유 공간을 활용해 2줄(종목명·코드) + 넉넉한 패딩 */
+    /* 보유종목 표: 2줄(종목명·코드) 유지하되 패딩 압축(스크롤 방지) */
     .kis-section .holdings-table th,
-    .kis-section .holdings-table td { padding: 0.62rem 0.75rem; }
+    .kis-section .holdings-table td { padding: 0.3rem 0.7rem; }
     .holdings-charts{ grid-area: charts; margin-bottom: 0; min-height: 0;
         display: flex; flex-direction: column; }
     /* 보유종목 차트: 영역을 가득 채움 (4×2, 셀 높이 균등) */
@@ -834,8 +852,8 @@ header {
     .holdings-charts .hc-card .spark { height: 100%; }
     .dashboard-grid { display: none; }  /* 자산추이/최근내역은 공간상 숨김 */
 
-    /* 보유종목 표: 보통 전부 보이고, 종목이 아주 많으면 내부 스크롤 */
-    .kis-section .table-wrap { max-height: 640px; overflow: auto; }
+    /* 국내주식 표는 작게(내부 스크롤 불필요) */
+    .kis-section .domestic-block .table-wrap { max-height: 180px; overflow: auto; }
 
     /* 밀도 */
     .card-info .amount { font-size: 1.45rem; }
@@ -1035,9 +1053,9 @@ header {
 }
 
 /* ── 국내주식 (원화) 섹션 ─────────────────────────────── */
-.domestic-block { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); }
+.domestic-block { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--glass-border); }
 .domestic-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-    font-size: 1rem; font-weight: 600; margin: 0 0 0.7rem; }
+    font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; }
 .domestic-title i { color: #60a5fa; }
 .domestic-sub { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); }
 .domestic-sub .positive { color: var(--positive); }
