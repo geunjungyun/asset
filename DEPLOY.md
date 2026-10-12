@@ -55,10 +55,29 @@ cd asset\backend
   ```
   해제: `Unregister-ScheduledTask -TaskName "AssetPro-AutoUpdate" -Confirm:$false`
 
-## 4. (선택) 부팅 시 자동 시작
+## 4. 부팅 시 자동 시작
 
-작업 스케줄러에 "시스템 시작 시 `run-server.ps1` 실행" 작업을 추가하거나,
-안정화 후에는 nssm 으로 서비스 등록 권장.
+서버에서 **관리자 PowerShell** 로 1회 실행하면, 부팅 시 자동으로 서버가 뜬다
+(로그인 안 해도 실행 · 꺼지면 1분 내 재시작):
+
+```powershell
+cd asset\backend
+.\register-autostart.ps1
+# SYSTEM 계정으로 돌리려면:  .\register-autostart.ps1 -System
+```
+
+- 지금 바로 시작: `Start-ScheduledTask -TaskName "AssetPro-Server"`
+- 상태 확인: `Get-ScheduledTask -TaskName "AssetPro-Server" | Get-ScheduledTaskInfo`
+- 해제: `Unregister-ScheduledTask -TaskName "AssetPro-Server" -Confirm:$false`
+
+> 기본은 현재 사용자 + S4U(로그인 불필요, 암호 저장 안 함, 로컬 파일 접근 가능).
+> 저장소가 `C:\Users\...` 가 아닌 경로(예: `D:\...`)라 SYSTEM 쓰기 권한이 걱정되면 기본값(현재 사용자)을 쓰면 된다.
+> 안정화 후 여러 대 배포 단계에서는 nssm 서비스/Docker 전환 고려.
+
+### 자동 시작 + 자동 업데이트 조합
+- `register-autostart.ps1` : 부팅 시 서버 실행(`run-server.ps1`, `--reload`)
+- `register-autoupdate.ps1` : N분마다 `git pull`(`update.ps1`)
+→ 둘 다 등록하면 **PC만 켜두면 서버 자동 기동 + push 하면 자동 반영**.
 
 ## 참고
 - `.venv` 는 복사하지 말 것(OS·경로 종속). 서버에서 새로 생성.
