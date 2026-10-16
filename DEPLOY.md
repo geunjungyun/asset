@@ -36,24 +36,28 @@ New-NetFirewallRule -DisplayName "AssetPro 8000" -Direction Inbound -Protocol TC
 cd asset\backend
 .\run-server.ps1
 ```
-→ `http://localhost:8000` / `http://<서버IP>:8000` (LAN·폰 접속). `--reload` 로 코드 변경 자동 반영.
+→ `http://localhost:8000` / `http://<서버IP>:8000` (LAN·폰 접속). 안정 모드(`--reload` 미사용), 코드 반영은 `update.ps1`이 자동 재시작으로 처리.
 
-## 3. 평소 업데이트 흐름
+## 3. 평소 업데이트 흐름 (push만 하면 자동 반영)
 
 ```
 [개발 PC] 수정 → git commit → git push
-[서버]    git pull  (아래 중 택1)
+[서버]    (2분마다 자동) git pull
+          ├ 프론트(js/css/html) 변경 → 그대로 반영(브라우저 새로고침)
+          └ 백엔드(.py)/requirements 변경 → update.ps1 이 서버 자동 재시작
 ```
 
-- **수동**: 서버에서 `cd asset\backend; .\update.ps1`
-  (git pull + requirements 바뀌면 pip install 자동)
-- **자동**: 한 번만 등록해 두면 N분마다 알아서 pull
+- **자동(권장)**: 한 번만 등록해 두면 N분마다 pull + 변경 시 서버 자동 재시작
   ```powershell
   # 관리자 PowerShell
   cd asset\backend
   .\register-autoupdate.ps1 -Minutes 2
   ```
   해제: `Unregister-ScheduledTask -TaskName "AssetPro-AutoUpdate" -Confirm:$false`
+- **수동**: 서버에서 `cd asset\backend; .\update.ps1` (pull + 의존성 + 백엔드 변경 시 재시작)
+
+> 자동 재시작은 `update.ps1`이 `AssetPro-Server` 작업을 Stop/Start 한다. 권한 때문에 재시작이 실패하면,
+> `register-autoupdate.ps1`을 **관리자 권한으로 재등록**(작업이 Highest로 돌도록)하거나 수동 재시작한다.
 
 ## 4. 부팅 시 자동 시작
 

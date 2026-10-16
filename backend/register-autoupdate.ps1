@@ -18,8 +18,13 @@ $trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) `
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
     -MultipleInstances IgnoreNew
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-    -Settings $settings -Description "AssetPro: git pull 자동 반영 ($Minutes 분마다)" -Force | Out-Null
+# 서버 작업(AssetPro-Server) 재시작 권한을 위해 최고 권한으로 실행
+$me = "$env:USERDOMAIN\$env:USERNAME"
+$principal = New-ScheduledTaskPrincipal -UserId $me -LogonType S4U -RunLevel Highest
 
-Write-Host "등록 완료: '$taskName' ($Minutes 분마다 update.ps1 실행)" -ForegroundColor Green
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+    -Settings $settings -Principal $principal `
+    -Description "AssetPro: git pull 자동 반영 + 백엔드 변경 시 서버 재시작 ($Minutes 분마다)" -Force | Out-Null
+
+Write-Host "등록 완료: '$taskName' ($Minutes 분마다 update.ps1 실행, 백엔드 변경 시 서버 자동 재시작)" -ForegroundColor Green
 Write-Host "해제:  Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false" -ForegroundColor Gray

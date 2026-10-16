@@ -24,6 +24,6 @@ $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike "169.*" -and $_.IPAddress -ne "127.0.0.1" } |
     Select-Object -First 1 -ExpandProperty IPAddress)
 Write-Host "AssetPro 서버 시작 → http://localhost:$port  /  http://$ip`:$port (LAN)" -ForegroundColor Green
-Write-Host "코드 변경(git pull) 시 자동 반영됩니다." -ForegroundColor Gray
+Write-Host "안정 모드(--reload 미사용). 코드 반영은 update.ps1 이 변경 시 자동 재시작." -ForegroundColor Gray
 
-& $py -m uvicorn main:app --host 0.0.0.0 --port $port --reload
+& $py -m uvicorn main:app --host 0.0.0.0 --port $port
