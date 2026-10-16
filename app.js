@@ -178,7 +178,10 @@ function renderHoldings(holdings) {
             <td class="num">${money(h.current_price)}</td>
             <td class="num">${money(h.eval_amount)}<span class="val-krw" data-usd="${h.eval_amount}"></span></td>
             <td class="num ${cls}">${signedMoney(h.eval_pnl)}<span class="pnl-krw" data-usd="${h.eval_pnl}"></span></td>
-            <td class="num ${cls}">${pct(h.pnl_rate)}</td>
+            <td class="num">
+                <div class="ret-total ${cls}">${pct(h.pnl_rate)}</div>
+                ${h.prdy_pct != null ? `<div class="ret-prdy ${h.prdy_pct >= 0 ? 'positive' : 'negative'}">전일 ${h.prdy_pct >= 0 ? '+' : ''}${h.prdy_pct.toFixed(2)}%</div>` : ''}
+            </td>
         `;
         body.appendChild(tr);
     });
@@ -210,7 +213,10 @@ function renderDomestic(d) {
             <td class="num">${won(h.current_price)}</td>
             <td class="num">${won(h.eval_amount)}</td>
             <td class="num ${cls}">${up ? '+' : '−'}${won(Math.abs(h.eval_pnl))}</td>
-            <td class="num ${cls}">${pct(h.pnl_rate)}</td>`;
+            <td class="num">
+                <div class="ret-total ${cls}">${pct(h.pnl_rate)}</div>
+                ${h.prdy_pct != null ? `<div class="ret-prdy ${h.prdy_pct >= 0 ? 'positive' : 'negative'}">전일 ${h.prdy_pct >= 0 ? '+' : ''}${h.prdy_pct.toFixed(2)}%</div>` : ''}
+            </td>`;
         body.appendChild(tr);
     });
     const s = d.summary || {};

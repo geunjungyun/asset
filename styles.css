@@ -555,6 +555,8 @@ header {
 
 .holdings-table .positive { color: var(--positive); }
 .holdings-table .negative { color: var(--negative); }
+/* 수익률 칸: 전체 수익률 + 전일대비 2줄 */
+.ret-prdy { font-size: 0.72rem; margin-top: 0.15rem; font-weight: 500; }
 
 .loading-row {
     text-align: center !important;

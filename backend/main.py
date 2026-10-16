@@ -78,13 +78,24 @@ async def health() -> dict:
     }
 
 
+def _enrich_prdy(data: dict, market: str) -> dict:
+    """각 보유종목에 전일 종가 대비 등락율(prdy_pct) 추가. 차트와 동일한 일봉 스토어 기준."""
+    for h in data.get("holdings", []):
+        cur = h.get("current_price")
+        pc = chart_service._prev_session_close(h.get("code", ""), h.get("market", market))
+        if pc and cur:
+            h["prdy_pct"] = round((cur - pc) / pc * 100, 2)
+            h["prdy_close"] = round(pc, 4)
+    return data
+
+
 @app.get("/api/account/status")
 async def account_status() -> JSONResponse:
     """계좌 요약 + 보유종목. 메리츠 우선, 실패 시 mock 폴백(경고 포함)."""
     # 1) 메리츠 실계좌(앱키 있으면)
     if meritz_settings.enabled:
         try:
-            return JSONResponse(await meritz_client.get_balance())
+            return JSONResponse(_enrich_prdy(await meritz_client.get_balance(), "overseas"))
         except meritz_client.MeritzError as exc:
             fallback = kis_client.mock_balance()
             fallback["warning"] = f"메리츠 연동 실패로 예시 데이터를 표시합니다: {exc}"
@@ -106,7 +117,7 @@ async def account_domestic() -> JSONResponse:
     if not meritz_settings.enabled:
         return JSONResponse({"mode": "mock", "currency": "KRW", "holdings": [], "summary": {}})
     try:
-        return JSONResponse(await meritz_client.get_domestic_balance())
+        return JSONResponse(_enrich_prdy(await meritz_client.get_domestic_balance(), "domestic"))
     except meritz_client.MeritzError as exc:
         return JSONResponse({"mode": "mock", "currency": "KRW", "holdings": [],
                              "summary": {}, "warning": f"국내 계좌 조회 실패: {exc}"})
