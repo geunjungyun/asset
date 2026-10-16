@@ -1,6 +1,6 @@
-# update.ps1 을 주기적으로 실행하는 작업 스케줄러 등록 (자동 배포)
-# push 하면 서버가 알아서 git pull → 자동 반영.
-# 실행: 관리자 PowerShell 에서  ->  .\register-autoupdate.ps1  [-Minutes 2]
+# Register a scheduled task that runs update.ps1 periodically (auto-deploy).
+# After you push, the server auto-pulls and (on backend change) auto-restarts.
+# Run in an ADMIN PowerShell:  .\register-autoupdate.ps1  [-Minutes 2]
 param([int]$Minutes = 2)
 
 $script = Join-Path $PSScriptRoot "update.ps1"
@@ -18,13 +18,13 @@ $trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) `
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
     -MultipleInstances IgnoreNew
 
-# 서버 작업(AssetPro-Server) 재시작 권한을 위해 최고 권한으로 실행
+# Run with highest privilege so it can restart the AssetPro-Server task
 $me = "$env:USERDOMAIN\$env:USERNAME"
 $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType S4U -RunLevel Highest
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
     -Settings $settings -Principal $principal `
-    -Description "AssetPro: git pull 자동 반영 + 백엔드 변경 시 서버 재시작 ($Minutes 분마다)" -Force | Out-Null
+    -Description "AssetPro: git pull auto-deploy + restart server on backend change ($Minutes min)" -Force | Out-Null
 
-Write-Host "등록 완료: '$taskName' ($Minutes 분마다 update.ps1 실행, 백엔드 변경 시 서버 자동 재시작)" -ForegroundColor Green
-Write-Host "해제:  Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false" -ForegroundColor Gray
+Write-Host "Registered: '$taskName' (runs update.ps1 every $Minutes min, auto-restarts server on backend change)" -ForegroundColor Green
+Write-Host "Remove:  Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false" -ForegroundColor Gray

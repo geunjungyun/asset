@@ -1,9 +1,10 @@
-# 최신 코드 받아 반영 (git pull + 필요 시 의존성 설치 + 백엔드 변경 시 서버 자동 재시작)
-# 사용: backend 폴더에서  ->  .\update.ps1
-# 프론트(js/css/html)는 pull만으로 반영(브라우저 새로고침). 백엔드(.py)/의존성 변경 시 서버 재시작.
+# Pull latest + apply (git pull + pip install if needed + restart server on backend change)
+# Usage (in backend folder):  .\update.ps1
+# Frontend (js/css/html): applied by pull only (refresh browser).
+# Backend (.py) / requirements: server is auto-restarted.
 
 $ErrorActionPreference = "Stop"
-$repo = Split-Path $PSScriptRoot -Parent          # backend 의 상위 = 저장소 루트
+$repo = Split-Path $PSScriptRoot -Parent          # parent of backend = repo root
 $py   = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 
@@ -11,39 +12,39 @@ Push-Location $repo
 try {
     $before = (git rev-parse HEAD).Trim()
     git pull --ff-only
-    if (-not $?) { Write-Host "git pull 실패 — 충돌/네트워크 확인" -ForegroundColor Red; return }
+    if (-not $?) { Write-Host "git pull failed - check conflict/network" -ForegroundColor Red; return }
     $after = (git rev-parse HEAD).Trim()
 
     if ($before -eq $after) {
-        Write-Host "이미 최신입니다 ($($after.Substring(0,7)))." -ForegroundColor Gray
+        Write-Host "Already up to date ($($after.Substring(0,7)))." -ForegroundColor Gray
         return
     }
 
     $changed = git diff --name-only $before $after
     $reqChanged     = $changed -match "requirements\.txt"
-    $backendChanged = ($changed -match "\.py$") -or $reqChanged   # .py 또는 의존성 변경
+    $backendChanged = ($changed -match "\.py$") -or $reqChanged
 
     if ($reqChanged) {
-        Write-Host "requirements 변경 감지 → 의존성 설치" -ForegroundColor Yellow
+        Write-Host "requirements changed -> installing deps" -ForegroundColor Yellow
         & $py -m pip install -r (Join-Path $PSScriptRoot "requirements.txt")
     }
 
     if ($backendChanged) {
-        Write-Host "백엔드(.py) 변경 감지 → 서버 재시작" -ForegroundColor Yellow
+        Write-Host "Backend (.py) changed -> restarting server" -ForegroundColor Yellow
         try {
             Stop-ScheduledTask  -TaskName "AssetPro-Server" -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 1000
             Start-ScheduledTask -TaskName "AssetPro-Server"
-            Write-Host "  서버 재시작 완료" -ForegroundColor Green
+            Write-Host "  server restarted" -ForegroundColor Green
         } catch {
-            Write-Host "  서버 재시작 실패(권한?): $_" -ForegroundColor Red
-            Write-Host "  → AssetPro-AutoUpdate 작업을 관리자 권한(-RunLevel Highest)으로 재등록하거나, 수동 재시작 필요" -ForegroundColor Gray
+            Write-Host "  server restart failed (privilege?): $_" -ForegroundColor Red
+            Write-Host "  -> re-register AssetPro-AutoUpdate as admin (RunLevel Highest), or restart manually" -ForegroundColor Gray
         }
     } else {
-        Write-Host "프론트만 변경 → 브라우저 새로고침으로 반영(서버 재시작 불필요)" -ForegroundColor Gray
+        Write-Host "Frontend only -> refresh browser (no restart needed)" -ForegroundColor Gray
     }
 
-    Write-Host "업데이트 완료: $($before.Substring(0,7)) -> $($after.Substring(0,7))" -ForegroundColor Green
+    Write-Host "Updated: $($before.Substring(0,7)) -> $($after.Substring(0,7))" -ForegroundColor Green
 }
 finally {
     Pop-Location

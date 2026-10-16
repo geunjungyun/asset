@@ -1,29 +1,29 @@
-# AssetPro 서버 실행 (LAN 접속 + 자동 리로드) — Windows 서버용
-# 사용: backend 폴더에서  ->  .\run-server.ps1
-# git pull 로 코드가 바뀌면 uvicorn 이 자동 재시작(--reload)한다.
+# AssetPro server runner (LAN access) - Windows server
+# Usage (in backend folder):  .\run-server.ps1
+# Stable mode (no --reload). Code changes are applied by update.ps1 (auto-restart on change).
 
 $ErrorActionPreference = "SilentlyContinue"
 $port = 8000
 
-# 1) 8000 포트를 점유한 기존 프로세스 종료
+# 1) Kill any process holding port 8000
 $conns = Get-NetTCPConnection -LocalPort $port -State Listen
 if ($conns) {
     $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object {
-        Write-Host "기존 프로세스 종료: PID $_" -ForegroundColor Yellow
+        Write-Host "Killing existing PID $_" -ForegroundColor Yellow
         Stop-Process -Id $_ -Force
     }
     Start-Sleep -Milliseconds 700
 }
 
-# 2) venv 파이썬 직접 호출 (ExecutionPolicy 무관)
+# 2) Call venv python directly (independent of ExecutionPolicy)
 $py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 
-# 3) 이 PC의 LAN IP 안내
+# 3) Show this PC's LAN IP
 $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike "169.*" -and $_.IPAddress -ne "127.0.0.1" } |
     Select-Object -First 1 -ExpandProperty IPAddress)
-Write-Host "AssetPro 서버 시작 → http://localhost:$port  /  http://$ip`:$port (LAN)" -ForegroundColor Green
-Write-Host "안정 모드(--reload 미사용). 코드 반영은 update.ps1 이 변경 시 자동 재시작." -ForegroundColor Gray
+Write-Host "AssetPro server starting -> http://localhost:$port  /  http://$ip`:$port (LAN)" -ForegroundColor Green
+Write-Host "Stable mode (no --reload). Code is applied by update.ps1 auto-restart." -ForegroundColor Gray
 
 & $py -m uvicorn main:app --host 0.0.0.0 --port $port
