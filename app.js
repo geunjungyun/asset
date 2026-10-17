@@ -814,7 +814,7 @@ function chartBlock(series, times, up, unit, big, refLines) {
             ${refHtml}
             ${dot(iMax, sMax, 'max')}
             ${dot(iMin, sMin, 'min')}
-            <span class="spark-y spark-y-max">${fmtNum(sMax, unit)}</span>
+            <span class="spark-y spark-y-max">${fmtNum(sMax, unit)}<span class="spark-y-diff" title="최대값 − 최소값">Δ${fmtNum(sMax - sMin, unit)}</span></span>
             <span class="spark-y spark-y-min">${fmtNum(sMin, unit)}</span>
         </div>
         <div class="spark-axis">${axisLabels(times, big ? 5 : 3)}</div>`;
