@@ -319,6 +319,11 @@ function renderHoldingsPie(holdings) {
 let holdingPeriod = '1D';
 let holdingTimer = null;
 
+// 장중(분봉) 기간 여부: 1h~12h 또는 1일. 정규장 시작/종료 세로 표기 대상.
+function isIntradayPeriod() {
+    return /^\d{1,2}h$/.test(holdingPeriod) || holdingPeriod === '1D';
+}
+
 let lastChartsData = null;  // 마지막 조회 결과(목표/손절 변경 시 재조회 없이 선만 갱신)
 
 async function loadHoldingsCharts() {
@@ -376,7 +381,7 @@ function renderHoldingsChartsGrid(d) {
                 <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
                 ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
             </div>
-            ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines)}
+            ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : [])}
         `;
         grid.appendChild(card);
     });
@@ -780,10 +785,41 @@ function sparkline(series, up, scaleMin, scaleMax) {
         </svg>`;
 }
 
+// 정규장(KST) 시작/종료 — 통화로 시장 구분 (미국=USD, 국내=KRW)
+function regularSessionTargets(cur) {
+    if (cur === 'KRW') return [{ label: '09:00', kind: 'open' }, { label: '15:30', kind: 'close' }];
+    return [{ label: '22:30', kind: 'open' }, { label: '05:00', kind: 'close' }];
+}
+function hmToMin(s) {
+    const m = /^(\d{1,2}):(\d{2})/.exec(s || '');
+    return m ? (+m[1]) * 60 + (+m[2]) : null;
+}
+// times(HH:MM 문자열 배열)에서 target 시각에 가장 가까운 봉 인덱스. 창 밖이면 -1.
+function nearestTimeIndex(times, targetMin, tol = 35) {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < times.length; i++) {
+        const t = hmToMin(times[i]);
+        if (t == null) continue;
+        let d = Math.abs(t - targetMin);
+        d = Math.min(d, 1440 - d);   // 자정 넘어가는 경우 보정
+        if (d < bestD) { bestD = d; best = i; }
+    }
+    return bestD <= tol ? best : -1;
+}
+// 정규장 시작/종료 세로 표기용 마크([{idx,label,kind}]). 해당 시각이 창 안에 있을 때만.
+function sessionMarks(times, cur) {
+    if (!Array.isArray(times) || !times.length) return [];
+    return regularSessionTargets(cur).map(s => {
+        const idx = nearestTimeIndex(times, hmToMin(s.label));
+        return idx >= 0 ? { idx, label: s.label, kind: s.kind } : null;
+    }).filter(Boolean);
+}
+
 // 차트 블록: 스파크라인 + 세로축(최대/최소) 라벨 + 최고/최저 지점 점 + 시간축
 // big=true 면 상세차트(큰 높이 + 축 라벨 5개)
 // refLines: [{value, label, kind:'avg'|'target'|'stop'}] (단일 숫자도 평단으로 허용)
-function chartBlock(series, times, up, unit, big, refLines) {
+// vmarks: [{idx, label, kind:'open'|'close'}] 정규장 시작/종료 세로 점선(장중 차트 전용)
+function chartBlock(series, times, up, unit, big, refLines, vmarks) {
     if (!Array.isArray(series) || !series.length) series = [0];
     const sMin = Math.min(...series), sMax = Math.max(...series);  // 시계열 실제 최소/최대
     let lines = [];
@@ -808,9 +844,16 @@ function chartBlock(series, times, up, unit, big, refLines) {
         return `<span class="spark-refline ref-${l.kind}" style="top:${t}%"></span>`
             + `<span class="spark-reflabel ref-${l.kind}" style="top:${t}%">${l.label} ${fmtNum(l.value, unit)}</span>`;
     }).join('');
+    // 정규장 시작/종료 세로 점선 + 시각 라벨
+    const vHtml = (Array.isArray(vmarks) ? vmarks : []).map(m => {
+        const x = leftPct(m.idx).toFixed(1);
+        return `<span class="spark-vline sess-${m.kind}" style="left:${x}%"></span>`
+            + `<span class="spark-vlabel sess-${m.kind}" style="left:${x}%">${m.label}</span>`;
+    }).join('');
     return `
         <div class="${wrapCls}">
             ${sparkline(series, up, min, max)}
+            ${vHtml}
             ${refHtml}
             ${dot(iMax, sMax, 'max')}
             ${dot(iMin, sMin, 'min')}

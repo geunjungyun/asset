@@ -414,6 +414,34 @@ header {
 .spark-dot.max { background: var(--positive); }
 .spark-dot.min { background: var(--negative); }
 
+/* 정규장 시작/종료 세로 점선 + 시각 라벨 (장중 차트 전용) */
+.spark-vline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed var(--accent-blue);
+    opacity: 0.55;
+    pointer-events: none;
+}
+.spark-vline.sess-close { border-left-color: var(--accent-orange); }
+.spark-vlabel {
+    position: absolute;
+    bottom: 1px;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0 2px;
+    color: var(--accent-blue);
+    background: rgba(15, 17, 26, 0.72);
+    border-radius: 2px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    white-space: nowrap;
+}
+.spark-vlabel.sess-close { color: var(--accent-orange); }
+
 .spark-axis {
     display: flex;
     justify-content: space-between;
