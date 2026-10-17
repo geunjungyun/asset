@@ -406,10 +406,59 @@ async def get_transactions(from_date: str = "00000000", to_date: str | None = No
 
 
 # --------------------------------------------------------------------------- #
+# 실현손익 / 고시환율 (손익 요약용) — 네이티브 값 사용
+# --------------------------------------------------------------------------- #
+async def get_domestic_pnl_symbols(from_date: str = "00000000", to_date: str | None = None) -> list[dict]:
+    """국내 종목별 실현손익(개설시점~). rsp 5820이어도 rows 있을 수 있어 길이로 판단."""
+    to_date = to_date or datetime.now(KST).strftime("%Y%m%d")
+    try:
+        body = await _get(PNL_SYMBOLS_PATH, {"iqry_sta_date": from_date, "iqry_fin_date": to_date})
+    except MeritzError:
+        return []
+    data = body.get("data")
+    return data if isinstance(data, list) else []
+
+
+async def get_overseas_pnl(ctcd: str = "US", from_date: str = "00000000",
+                           to_date: str | None = None) -> list[dict]:
+    """해외 실현손익(국가코드 ctcd, 개설시점~)."""
+    to_date = to_date or datetime.now(KST).strftime("%Y%m%d")
+    try:
+        body = await _get(OVS_PNL_PATH, {"ctcd": ctcd, "oder_sta_date": from_date, "oder_fin_date": to_date})
+    except MeritzError:
+        return []
+    data = body.get("data")
+    if isinstance(data, list):
+        return data
+    return [data] if isinstance(data, dict) else []
+
+
+async def get_fx_rate(crcd: str = "USD", stnd_date: str | None = None) -> float | None:
+    """고시환율(기준환율). 실패 시 None."""
+    stnd_date = stnd_date or datetime.now(KST).strftime("%Y%m%d")
+    try:
+        body = await _get(FX_RATES_PATH, {"stnd_date": stnd_date, "crcd": crcd})
+    except MeritzError:
+        return None
+    data = body.get("data")
+    row = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+    if not row:
+        return None
+    raw = row.get("stnd_exrt") or row.get("deal_stnd_exrt") or row.get("tltr_aply_byrt")
+    try:
+        return float(str(raw).replace(",", "")) or None
+    except (TypeError, ValueError):
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # 체결내역(주문내역) — 거래내역(정산)보다 먼저 체결 당일 반영
 # --------------------------------------------------------------------------- #
 OVS_ORDERS_TODAY_PATH = "/trading/v1/overseas/orders/today"
 ORDERS_HISTORY_PATH = "/trading/v1/orders/history"
+PNL_SYMBOLS_PATH = "/accounts/v1/me/profit-loss/symbols"
+OVS_PNL_PATH = "/accounts/v1/me/overseas/profit-loss"
+FX_RATES_PATH = "/forex/v1/rates"
 
 
 async def get_overseas_orders_today() -> list[dict]:

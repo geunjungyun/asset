@@ -31,6 +31,7 @@ import chart_service
 import collector
 import ledger_store
 import ledger_sync
+import ledger_pnl
 from config import settings, meritz_settings
 from kis_ws import engine
 
@@ -205,6 +206,14 @@ async def ledger_sync_now() -> dict:
     st = await asyncio.to_thread(ledger_store.stats)
     est = await asyncio.to_thread(ledger_store.exec_stats)
     return {"synced": n, "exec_synced": ne, "stats": st, "exec_stats": est}
+
+
+@app.get("/api/ledger/pnl")
+async def ledger_pnl_summary() -> dict:
+    """손익 요약: 종목별 실현(네이티브)+미실현(보유)=총수익, 전체 누적. KRW 환산 병기."""
+    if not meritz_settings.enabled:
+        return {"summary": {}, "symbols": [], "fx": 0, "as_of": None}
+    return await ledger_pnl.build_pnl()
 
 
 @app.get("/api/market")
