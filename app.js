@@ -1068,35 +1068,35 @@ async function loadSectors(force) {
 function renderSectorView() {
     const heat = document.getElementById('sector-heatmap');
     const hmSig = document.getElementById('hm-signal-toggle');
-    const mom = document.getElementById('sector-momentum');
-    const grid = document.getElementById('sector-grid');
-    const pt = document.getElementById('sector-period-toggle');
+    const tbl = document.getElementById('sector-momentum');   // 표 컨테이너(재사용)
+    const chips = document.getElementById('table-period-toggle');
+    const det = document.getElementById('hm-detail');
     const isHeat = sectorMode === 'heatmap';
-    const isMom = sectorMode === 'momentum';
-    const isChart = sectorMode === 'chart';
+    const isTable = sectorMode === 'momentum';
     if (heat) heat.hidden = !isHeat;
     if (hmSig) hmSig.hidden = !isHeat;
-    const det = document.getElementById('hm-detail');
-    if (det && !isHeat) det.hidden = true;
-    if (mom) mom.hidden = !isMom;
-    if (grid) grid.hidden = !isChart;
-    if (pt) pt.hidden = !isChart;  // 기간 토글은 그래프 보기에서만
-    if (isHeat) loadBoard();
-    else if (isMom) renderSectorMomentum();
-    else renderSectorCharts();
+    if (det) det.hidden = !isHeat;
+    if (tbl) tbl.hidden = !isTable;
+    if (chips) chips.hidden = !isTable;
+    if (isHeat || isTable) loadBoard();
 }
 
-// ── 히트맵 (대분류▸중분류▸종목 한눈에) ──────────────────────────────────── //
+// ── 보드(히트맵/표) — 둘 다 /api/sectors/board 사용 ─────────────────────── //
 async function loadBoard(force) {
-    const box = document.getElementById('sector-heatmap');
-    if (boardData && !force) { renderHeatmap(); return; }
-    if (box) box.innerHTML = '<div class="loading-row">히트맵을 불러오는 중...</div>';
+    if (boardData && !force) { renderBoardView(); return; }
+    const box = document.getElementById(sectorMode === 'momentum' ? 'sector-momentum' : 'sector-heatmap');
+    if (box) box.innerHTML = '<div class="loading-row">불러오는 중...</div>';
     try {
         boardData = await fetchJSON('/api/sectors/board');
-        renderHeatmap();
+        renderBoardView();
     } catch (e) {
         if (box) box.innerHTML = '<div class="loading-row">보드를 불러올 수 없습니다.</div>';
     }
+}
+
+function renderBoardView() {
+    if (sectorMode === 'momentum') renderSectorTable();
+    else renderHeatmap();
 }
 
 function _hmVal(o) {
@@ -1198,6 +1198,74 @@ function _stripColor(v) {
     const to = t >= 0 ? pos : neg, a = Math.abs(t);
     const c = neu.map((n, i) => Math.round(n + (to[i] - n) * a));
     return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+// ── 표 (정밀 수치 + 기간 스트립 + 기간 선택) ────────────────────────────── //
+const PERIOD_LABEL = {
+    '1D': '1일', '2D': '2일', '3D': '3일', '4D': '4일', '5D': '5일', '6D': '6일',
+    '1W': '1주', '2W': '2주', '3W': '3주', '1M': '1개월', '2M': '2개월', '3M': '3개월',
+    '5M': '5개월', '6M': '6개월', '7M': '7개월', '8M': '8개월', '10M': '10개월', '1Y': '1년',
+};
+let tablePeriods = ['1W', '1M', '3M'];
+
+function _tpc(v) {
+    const n = Number(v) || 0;
+    return `<td class="num ${n >= 0 ? 'pos' : 'neg'}">${n >= 0 ? '+' : ''}${n.toFixed(1)}</td>`;
+}
+function _stateBadge(st) {
+    const m = { '건전': 'hc-g', '과열': 'hc-o', '약세': 'hc-r', '중립': 'hc-n' };
+    return (st && st !== '-') ? `<span class="st-badge ${m[st] || 'hc-n'}">${st}</span>` : '';
+}
+function _stripCells(per) {
+    return (boardData.strip_periods || []).map(p => {
+        const v = Number((per || {})[p]) || 0;
+        return `<span class="hm-strip-c sm" style="background:${_stripColor(v)}" title="${PERIOD_LABEL[p] || p} ${v >= 0 ? '+' : ''}${v.toFixed(1)}%"></span>`;
+    }).join('');
+}
+function _rsCell(v) {
+    return `<td class="num ${(Number(v) || 0) >= 0 ? 'pos' : 'neg'}">${v == null ? '-' : (v >= 0 ? '+' : '') + v}</td>`;
+}
+
+function renderSectorTable() {
+    const box = document.getElementById('sector-momentum');
+    if (!box || !boardData) return;
+    const order = boardData.all_periods || Object.keys(PERIOD_LABEL);
+    const cols = tablePeriods.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const span = cols.length + 6;
+    const head = `<tr><th>섹터 / 종목</th>${cols.map(p => `<th class="num">${PERIOD_LABEL[p] || p}</th>`).join('')}`
+        + `<th class="num">가속</th><th class="num">시장대비</th><th class="num">Δ순위</th><th class="c">상태</th><th>추이</th></tr>`;
+    const sectors = [...(boardData.sectors || [])].sort((a, b) => (a.rank || 99) - (b.rank || 99));
+    let body = '';
+    for (const s of sectors) {
+        const sg = s.sig || {};
+        body += `<tr class="tbl-sec"><td><b>#${s.rank || '-'} ${s.name}</b> ${_drankBadge(s.drank)}</td>`
+            + cols.map(p => _tpc((sg.periods || {})[p])).join('')
+            + `<td class="num">${(sg.accel >= 0 ? '+' : '') + (sg.accel ?? 0)}</td>`
+            + _rsCell(sg.rs)
+            + `<td class="num">${_drankBadge(s.drank) || '–'}</td>`
+            + `<td class="c">${_stateBadge(sg.state)}</td>`
+            + `<td>${_stripCells(sg.periods)}</td></tr>`;
+        for (const ind of s.industries) {
+            body += `<tr class="tbl-ind"><td colspan="${span}">${ind.name}</td></tr>`;
+            for (const t of ind.stocks) {
+                if (t.no_data) {
+                    body += `<tr class="tbl-stk"><td class="stk-name">${t.held ? '● ' : ''}${t.code}</td>`
+                        + `<td colspan="${span - 1}" class="mom-nodata">데이터 없음</td></tr>`;
+                    continue;
+                }
+                body += `<tr class="tbl-stk"><td class="stk-name">${t.held ? '● ' : ''}${t.code}</td>`
+                    + cols.map(p => _tpc((t.periods || {})[p])).join('')
+                    + `<td class="num">${(t.accel >= 0 ? '+' : '') + (t.accel ?? 0)}</td>`
+                    + _rsCell(t.rs)
+                    + `<td class="num">${_drankBadge(t.drank) || '–'}</td>`
+                    + `<td class="c">${_stateBadge(t.state)}</td>`
+                    + `<td>${_stripCells(t.periods)}</td></tr>`;
+            }
+        }
+    }
+    box.innerHTML = `<div class="tbl-board-wrap"><table class="tbl-board"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+    const su = document.getElementById('sector-updated');
+    if (su) su.textContent = '기준: ' + (boardData.updated_at || '') + ' · ' + (boardData.source || '');
 }
 
 // 섹터 모멘텀 랭킹 보드 (갈아타기 판단)
@@ -1679,6 +1747,19 @@ function initSectorPeriodToggle() {
     if (heatBox) heatBox.addEventListener('mouseover', (e) => {
         const tile = e.target.closest('.hm-tile[data-code]');
         if (tile) showHmDetail(tile.dataset.code, tile.dataset.key);
+    });
+    // 표 기간 선택 칩
+    const tpt = document.getElementById('table-period-toggle');
+    if (tpt) tpt.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-p]');
+        if (!b) return;
+        const p = b.dataset.p;
+        if (tablePeriods.includes(p)) {
+            if (tablePeriods.length > 1) { tablePeriods = tablePeriods.filter(x => x !== p); b.classList.remove('active'); }
+        } else {
+            tablePeriods.push(p); b.classList.add('active');
+        }
+        renderSectorTable();
     });
 
     // 모멘텀 섹터 행 펼치기/접기 (이벤트 위임)

@@ -1342,6 +1342,34 @@ header {
 .hm-d-strip { display: flex; gap: 3px; flex-wrap: wrap; }
 .hm-strip-c { font-size: 0.58rem; padding: 3px 7px; border-radius: 3px; color: #fff; }
 
+/* 섹터 표(정밀 수치 + 스트립 + 기간 선택) */
+.tbl-chips { flex-wrap: wrap; max-width: 560px; }
+.tbl-chips button { padding: 2px 7px; font-size: 0.68rem; }
+.tbl-chips .hm-sig-lbl { font-size: 0.7rem; color: var(--text-muted); padding: 0 4px; align-self: center; }
+.tbl-board-wrap { overflow-x: auto; }
+.tbl-board { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.tbl-board th {
+    text-align: left; font-weight: 500; color: var(--text-muted); font-size: 0.66rem;
+    padding: 5px 7px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    white-space: nowrap; position: sticky; top: 0; background: var(--bg-dark); z-index: 1;
+}
+.tbl-board th.num { text-align: right; } .tbl-board th.c { text-align: center; }
+.tbl-board td { padding: 3px 7px; white-space: nowrap; }
+.tbl-board td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl-board td.c { text-align: center; }
+.tbl-board .pos { color: var(--positive); } .tbl-board .neg { color: var(--negative); }
+.tbl-sec td { border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 6px; }
+.tbl-sec td b { font-size: 0.8rem; }
+.tbl-ind td { color: var(--text-muted); font-size: 0.64rem; padding: 3px 7px 1px 14px; }
+.tbl-stk .stk-name { padding-left: 20px; }
+.tbl-stk:hover td { background: rgba(255, 255, 255, 0.03); }
+.st-badge { font-size: 0.6rem; padding: 1px 6px; border-radius: 3px; }
+.st-badge.hc-g { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+.st-badge.hc-o { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.st-badge.hc-r { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+.st-badge.hc-n { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+.hm-strip-c.sm { padding: 0; width: 13px; height: 11px; display: inline-block; border-radius: 2px; }
+
 /* ── 포트폴리오 손익 ─────────────────────────────────────────────────── */
 .pnl-page { max-width: 1100px; }
 .pnl-summary { margin: 0.6rem 0 1rem; }
