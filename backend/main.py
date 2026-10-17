@@ -81,10 +81,17 @@ async def health() -> dict:
 def _enrich_prdy(data: dict, market: str) -> dict:
     """각 보유종목에 전일 종가 대비 등락율(prdy_pct) 추가. 차트와 동일한 일봉 스토어 기준."""
     for h in data.get("holdings", []):
-        cur = h.get("current_price")
-        pc = chart_service._prev_session_close(h.get("code", ""), h.get("market", market))
-        if pc and cur:
-            h["prdy_pct"] = round((cur - pc) / pc * 100, 2)
+        code = h.get("code", "")
+        mkt = h.get("market", market)
+        pc = chart_service._prev_session_close(code, mkt)
+        if not pc:
+            continue
+        # 전일대비는 '라이브 장중가'(차트와 동일한 5분봉 기준)로 계산한다.
+        # 미 정규장 마감 시간대엔 메리츠 현재가가 전일 종가로 고정돼 0%가 되므로,
+        # 라이브가가 있으면 그것을, 없으면(장 마감) 메리츠 현재가로 폴백한다.
+        price = chart_service._live_price(code, mkt) or h.get("current_price")
+        if price:
+            h["prdy_pct"] = round((price - pc) / pc * 100, 2)
             h["prdy_close"] = round(pc, 4)
     return data
 

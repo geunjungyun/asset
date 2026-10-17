@@ -135,6 +135,23 @@ def _prev_session_close(symbol: str, mkt: str = "overseas") -> float | None:
     return None
 
 
+def _live_price(symbol: str, mkt: str = "overseas") -> float | None:
+    """오늘 장중 세션(해외 09:00/국내 08:00 KST) 이후 가장 최근 5분봉 종가.
+
+    차트 value와 동일 소스(5분봉 스토어). 미 정규장 마감 시간대엔 메리츠 잔고
+    '현재가'가 전일 종가로 고정되므로, 전일대비 등락율을 차트와 맞추려면 이 값을 쓴다.
+    오늘 세션 이후 봉이 없으면(장 마감 등) None → 호출부에서 현재가로 폴백한다.
+    """
+    session_start = _recent_session_start(mkt)
+    rows = store.get_candles(symbol, "5m")
+    if not rows:
+        return None
+    ts, close = rows[-1][0], rows[-1][1]
+    if close and ts >= session_start:
+        return round(float(close), 4)
+    return None
+
+
 def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas") -> dict:
     """장중(1h~1D) 등락폭을 전일 정규장 마감 종가 기준으로 덮어쓴다."""
     pc = _prev_session_close(symbol, mkt)
