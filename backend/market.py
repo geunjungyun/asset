@@ -516,6 +516,164 @@ async def get_sector_momentum(key: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# 섹터 보드 (히트맵/표) — 계층 + 다기간 수익률·상대강도·Δ순위·상태
+# --------------------------------------------------------------------------- #
+# 선택/스트립용 다기간 수익률(거래일 기준)
+PERIOD_DAYS = {
+    "1D": 1, "2D": 2, "3D": 3, "4D": 4, "5D": 5, "6D": 6,
+    "1W": 5, "2W": 10, "3W": 15,
+    "1M": 21, "2M": 42, "3M": 63, "5M": 105, "6M": 126,
+    "7M": 147, "8M": 168, "10M": 210, "1Y": 252,
+}
+STRIP_PERIODS = ["1D", "1W", "2W", "1M", "3M", "6M", "1Y"]  # 프로파일 스트립 순서
+
+_board_cache: dict | None = None
+BOARD_TTL = 90  # 초 (약 100종목 조회라 비쌈)
+
+
+def _rsi(closes: list[float], n: int = 14) -> float | None:
+    if len(closes) < n + 1:
+        return None
+    gains = losses = 0.0
+    for i in range(len(closes) - n, len(closes)):
+        ch = closes[i] - closes[i - 1]
+        if ch >= 0:
+            gains += ch
+        else:
+            losses -= ch
+    avg_g, avg_l = gains / n, losses / n
+    if avg_l == 0:
+        return 100.0
+    rs = avg_g / avg_l
+    return round(100 - 100 / (1 + rs), 1)
+
+
+def _state(closes: list[float]) -> dict:
+    """건전/과열/약세/중립 + 근거(RSI·52주 고가 대비·200일선)."""
+    if len(closes) < 30:
+        return {"state": "-", "rsi": None, "from_high": None, "vs_ma200": None}
+    price = closes[-1]
+    hi = max(closes[-252:]) if len(closes) >= 2 else price
+    from_high = round((price / hi - 1) * 100, 1) if hi else 0.0
+    ma_n = min(len(closes), 200)
+    ma200 = sum(closes[-ma_n:]) / ma_n
+    vs_ma200 = round((price / ma200 - 1) * 100, 1) if ma200 else 0.0
+    rsi = _rsi(closes)
+    if price < ma200:
+        st = "약세"
+    elif (rsi is not None and rsi > 70) or from_high > -3:
+        st = "과열"
+    elif rsi is not None and 40 <= rsi <= 70:
+        st = "건전"
+    else:
+        st = "중립"
+    return {"state": st, "rsi": rsi, "from_high": from_high, "vs_ma200": vs_ma200}
+
+
+def _score_asof(closes: list[float], offset: int = 0) -> float:
+    """offset 거래일 전 시점의 모멘텀 점수(Δ순위용). 0=현재, 5=1주 전."""
+    cl = closes[:len(closes) - offset] if offset else closes
+    if len(cl) < 2:
+        return -999.0
+    return _momentum(_ret(cl, _MOM_BACK["r1w"]), _ret(cl, _MOM_BACK["r1m"]),
+                     _ret(cl, _MOM_BACK["r3m"]))["score"]
+
+
+async def get_sector_board() -> dict:
+    """전체 섹터▸산업▸종목 + 신호(다기간 수익률·상대강도·Δ순위·상태). 히트맵/표용."""
+    global _board_cache
+    if _board_cache and time.time() - _board_cache["_ts"] < BOARD_TTL:
+        return _board_cache["data"]
+
+    cfg = sector_config.get_config()
+    etfs = [s.get("etf") for s in cfg["sectors"] if s.get("etf")]
+    stocks: list[str] = []
+    for s in cfg["sectors"]:
+        for ind in s.get("industries", []):
+            stocks.extend(ind.get("tickers", []))
+    uniq_stocks = list(dict.fromkeys(stocks))
+    allsyms = list(dict.fromkeys(["SPY", *etfs, *uniq_stocks]))
+
+    sem = asyncio.Semaphore(12)
+
+    async def _one(client, sym):
+        async with sem:
+            return sym, await _fetch_chart(client, sym, "1d", "1y")
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        res = await asyncio.gather(*[_one(client, s) for s in allsyms])
+    metas = {sym: meta for sym, (meta, _pts) in res}
+    series_map = {sym: [c for _t, c in (pts or []) if c is not None] for sym, (_meta, pts) in res}
+
+    spy_score = _score_asof(series_map.get("SPY", []))
+
+    def _sig(sym: str) -> dict | None:
+        cl = series_map.get(sym, [])
+        if len(cl) < 2:
+            return None
+        per = {p: _ret(cl, d) for p, d in PERIOD_DAYS.items()}
+        mom = _momentum(per["1W"], per["1M"], per["3M"])
+        st = _state(cl)
+        spark = cl[-63:]
+        if len(spark) > 40:
+            spark = spark[:: (len(spark) // 40) or 1]
+        price = (metas.get(sym) or {}).get("regularMarketPrice") or cl[-1]
+        return {
+            "periods": per, "r1w": per["1W"], "r1m": per["1M"], "r3m": per["3M"],
+            "score": mom["score"], "accel": mom["accel"],
+            "rs": round(mom["score"] - spy_score, 3),
+            "state": st["state"], "rsi": st["rsi"],
+            "from_high": st["from_high"], "vs_ma200": st["vs_ma200"],
+            "_score_1w": _score_asof(cl, 5),
+            "price": round(float(price), 2), "currency": (metas.get(sym) or {}).get("currency", "USD"),
+            "series": [round(c, 4) for c in spark],
+        }
+
+    sectors_out = []
+    for s in cfg["sectors"]:
+        esig = _sig(s.get("etf")) if s.get("etf") else None
+        inds_out = []
+        for ind in s.get("industries", []):
+            toks = []
+            for t in ind.get("tickers", []):
+                g = _sig(t)
+                toks.append({"code": t, "held": t in USER_HELD, **(g or {"no_data": True})})
+            inds_out.append({"name": ind.get("name", "기타"), "stocks": toks})
+        sectors_out.append({"key": s["key"], "name": s["name"], "etf": s.get("etf"),
+                            "sig": esig, "industries": inds_out})
+
+    # 섹터 Δ순위(ETF 점수 기준, 11개 중 순위 변화)
+    valid = [(so["key"], so["sig"]) for so in sectors_out if so["sig"]]
+    now_r = {k: i + 1 for i, (k, g) in enumerate(sorted(valid, key=lambda x: x[1]["score"], reverse=True))}
+    old_r = {k: i + 1 for i, (k, g) in enumerate(sorted(valid, key=lambda x: x[1]["_score_1w"], reverse=True))}
+    for so in sectors_out:
+        if so["sig"]:
+            so["rank"] = now_r.get(so["key"])
+            so["drank"] = old_r.get(so["key"], 0) - now_r.get(so["key"], 0)
+
+    # 종목 Δ순위(섹터 내 순위 변화)
+    for so in sectors_out:
+        toks = [t for ind in so["industries"] for t in ind["stocks"] if "score" in t]
+        nr = {t["code"]: i + 1 for i, t in enumerate(sorted(toks, key=lambda t: t["score"], reverse=True))}
+        orr = {t["code"]: i + 1 for i, t in enumerate(sorted(toks, key=lambda t: t.get("_score_1w", -999), reverse=True))}
+        for ind in so["industries"]:
+            for t in ind["stocks"]:
+                if "score" in t:
+                    t["rank"] = nr.get(t["code"])
+                    t["drank"] = orr.get(t["code"], 0) - nr.get(t["code"], 0)
+
+    data = {
+        "sectors": sectors_out,
+        "strip_periods": STRIP_PERIODS,
+        "all_periods": list(PERIOD_DAYS.keys()),
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
+        "source": "Yahoo (약 15분 지연)",
+    }
+    _board_cache = {"_ts": time.time(), "data": data}
+    return data
+
+
+# --------------------------------------------------------------------------- #
 # 관심그룹 모멘텀 (사용자 정의 그룹)
 # --------------------------------------------------------------------------- #
 _wgroups_cache: dict | None = None

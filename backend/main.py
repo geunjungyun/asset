@@ -245,6 +245,12 @@ async def sectors_config_put(cfg: dict) -> JSONResponse:
     return JSONResponse(saved)
 
 
+@app.get("/api/sectors/board")
+async def sectors_board() -> dict:
+    """섹터▸산업▸종목 + 신호(다기간 수익률·상대강도·Δ순위·상태). 히트맵/표용."""
+    return await market.get_sector_board()
+
+
 @app.get("/api/sectors/{key}/members")
 async def sector_members(key: str, period: str = "1W") -> dict:
     """특정 섹터의 대표 구성종목 드릴다운(기간별 등락률). 펼칠 때만 호출."""
