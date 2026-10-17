@@ -30,6 +30,7 @@ HOLDINGS_PATH = "/accounts/v1/me/overseas/holdings"
 CURRENCIES_PATH = "/accounts/v1/me/overseas/currencies"
 DOMESTIC_HOLDINGS_PATH = "/accounts/v1/me/holdings"
 DOMESTIC_DEPOSIT_PATH = "/accounts/v1/me/deposit"
+TRANSACTIONS_PATH = "/accounts/v1/me/transactions"
 
 
 class MeritzError(Exception):
@@ -371,3 +372,34 @@ async def get_domestic_balance() -> dict:
         },
         "holdings": holdings,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 거래·입출금 내역 (원장용)
+# --------------------------------------------------------------------------- #
+async def get_transactions(from_date: str = "00000000", to_date: str | None = None,
+                           sort: str = "ASC", max_pages: int = 200) -> list[dict]:
+    """계좌 거래·입출금 내역 전체(연속조회). 원본 data 행 리스트를 반환.
+
+    from_date='00000000' 이면 계좌 개설 시점부터. 응답 tr_cont='1' 이면 다음 페이지가
+    있어 tr_cont_key 로 이어 조회한다. tr_cont_key 는 뒤쪽 공백이 포함될 수 있으므로
+    가공하지 않고 그대로 전달한다(메리츠 규약).
+    """
+    to_date = to_date or datetime.now(KST).strftime("%Y%m%d")
+    out: list[dict] = []
+    tr_cont_key: str | None = None
+    for _ in range(max_pages):
+        params = {"from": from_date, "to": to_date, "sort": sort}
+        if tr_cont_key is not None:
+            params["tr_cont"] = "1"
+            params["tr_cont_key"] = tr_cont_key
+        body = await _get(TRANSACTIONS_PATH, params)
+        data = body.get("data")
+        if isinstance(data, list):
+            out.extend(data)
+        if str(body.get("tr_cont")) == "1" and body.get("tr_cont_key"):
+            tr_cont_key = body["tr_cont_key"]
+            await asyncio.sleep(0.15)
+            continue
+        break
+    return out

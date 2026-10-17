@@ -14,6 +14,9 @@ backend/.market_cache.json
 backend/.candles.db
 backend/.candles.db-wal
 backend/.candles.db-shm
+backend/.ledger.db
+backend/.ledger.db-wal
+backend/.ledger.db-shm
 
 # ── IDE ──
 .vscode/

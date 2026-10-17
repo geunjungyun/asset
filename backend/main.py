@@ -29,6 +29,8 @@ import meritz_client
 import candle_store
 import chart_service
 import collector
+import ledger_store
+import ledger_sync
 from config import settings, meritz_settings
 from kis_ws import engine
 
@@ -39,12 +41,14 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent
 async def lifespan(app: FastAPI):
     await engine.start()      # KIS 실시간(또는 시뮬레이터) 엔진 기동
     candle_store.init_db()    # 캔들 저장소 준비
-    collector_task = None
+    ledger_store.init_db()    # 원장(거래내역) 저장소 준비
+    tasks = []
     if meritz_settings.enabled:
-        collector_task = asyncio.create_task(collector.run_collector())  # 캔들 누적 수집
+        tasks.append(asyncio.create_task(collector.run_collector()))     # 캔들 누적 수집
+        tasks.append(asyncio.create_task(ledger_sync.run_ledger_sync())) # 거래내역 수집
     yield
-    if collector_task:
-        collector_task.cancel()
+    for t in tasks:
+        t.cancel()
     await engine.stop()
 
 
@@ -178,6 +182,24 @@ async def holdings_charts(period: str = "realtime") -> dict:
 async def candles_stats() -> dict:
     """캔들 누적 저장소 진단(종목·간격별 행수/기간)."""
     return candle_store.stats()
+
+
+@app.get("/api/ledger/transactions")
+async def ledger_transactions(limit: int = 200, offset: int = 0,
+                              date_from: str | None = None,
+                              date_to: str | None = None) -> dict:
+    """원장 거래·입출금 내역(최신순). 날짜(YYYYMMDD) 범위 필터 옵션."""
+    rows = await asyncio.to_thread(ledger_store.get_tx, limit, offset, date_from, date_to)
+    st = await asyncio.to_thread(ledger_store.stats)
+    return {"stats": st, "count": len(rows), "transactions": rows}
+
+
+@app.post("/api/ledger/sync")
+async def ledger_sync_now() -> dict:
+    """수동 수집 트리거(거래내역 재조회·upsert)."""
+    n = await ledger_sync.sync_transactions()
+    st = await asyncio.to_thread(ledger_store.stats)
+    return {"synced": n, "stats": st}
 
 
 @app.get("/api/market")
