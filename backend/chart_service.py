@@ -135,34 +135,25 @@ def _prev_session_close(symbol: str, mkt: str = "overseas") -> float | None:
     return None
 
 
-_LIVE_CACHE: dict[str, tuple[float, float]] = {}  # symbol -> (price, fetched_at)
-_LIVE_TTL = 20  # 초. 계좌 폴링(10초)에서 과도한 분봉 호출 방지
+def _prev_day_change(symbol: str, mkt: str = "overseas") -> tuple[float | None, float | None]:
+    """직전 거래일(전날) '그 자체'의 등락율 = (전일종가 - 전전일종가) / 전전일종가 * 100.
 
-
-async def _live_price(symbol: str, exch: str, mkt: str = "overseas") -> float | None:
-    """가장 최근 장중 가격 = 메리츠 분봉의 마지막 종가(차트 value와 동일 소스).
-
-    미 정규장 마감 시간대엔 메리츠 잔고 '현재가'가 전일 종가로 고정되는데,
-    분봉 API는 주간거래(ATS) 체결가까지 반영하므로 전일대비를 차트와 일치시킬 수 있다.
-    5분봉 스토어는 수집 주기(약 10분) 때문에 분봉 API보다 뒤처져 쓰지 않는다.
-    조회 실패/빈 응답이면 None → 호출부에서 메리츠 현재가로 폴백한다.
+    오늘 세션(해외 09:00/국내 08:00 KST) 시작 이전의 일봉 종가 2개(최근 2거래일)를
+    종가-종가로 비교한다. 라이브 현재가와 무관한 '전날의 등락율'. 일봉 2개가 없으면 (None, None).
+    반환: (등락율%, 전일종가)
     """
-    now = time.time()
-    hit = _LIVE_CACHE.get(symbol)
-    if hit and now - hit[1] < _LIVE_TTL:
-        return hit[0]
-    try:
-        bars = (await meritz.overseas_candles(symbol, exch, "minutes", 300)
-                if mkt == "overseas"
-                else await meritz.domestic_candles(symbol, "minutes", 300))
-    except meritz.MeritzError:
-        return None
-    closes = [c for ts, o, h, l, c, v in bars if c]
-    if not closes:
-        return None
-    price = round(float(closes[-1]), 4)
-    _LIVE_CACHE[symbol] = (price, now)
-    return price
+    anchor_date = datetime.fromtimestamp(_recent_session_start(mkt), KST).date()
+    closes: list[float] = []
+    for ts, close, *_ in reversed(store.get_candles(symbol, "1d")):
+        if close and datetime.fromtimestamp(ts, KST).date() < anchor_date:
+            closes.append(close)
+            if len(closes) == 2:
+                break
+    if len(closes) < 2 or not closes[1]:
+        return None, None
+    prev_close, prev_prev = closes[0], closes[1]
+    pct = round((prev_close - prev_prev) / prev_prev * 100, 2)
+    return pct, round(prev_close, 4)
 
 
 def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas") -> dict:
