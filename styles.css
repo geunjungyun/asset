@@ -1330,3 +1330,22 @@ header {
     font-weight: 600; font-variant-numeric: tabular-nums; padding: 10px;
 }
 .pnl-total-row td.num { text-align: right; }
+
+.pnl-row.has-detail { cursor: pointer; }
+.pnl-row.has-detail:hover td { background: rgba(255, 255, 255, 0.03); }
+.pnl-row.open td { background: rgba(59, 130, 246, 0.06); }
+.pnl-chev { font-size: 0.6rem; color: var(--text-muted); transition: transform 0.15s; margin-right: 2px; }
+.pnl-row.open .pnl-chev { transform: rotate(90deg); }
+.pnl-detail td { background: rgba(255, 255, 255, 0.02); padding: 8px 12px 12px; }
+.pd-summary { font-size: 0.76rem; color: var(--text-muted); }
+.pd-summary span { font-weight: 600; }
+.pd-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.pd-table th {
+    text-align: left; font-weight: 500; color: var(--text-muted); font-size: 0.68rem;
+    padding: 4px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); white-space: nowrap;
+}
+.pd-table th.num { text-align: right; }
+.pd-table td { padding: 4px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); white-space: nowrap; }
+.pd-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pd-table .pos { color: var(--positive); }
+.pd-table .neg { color: var(--negative); }

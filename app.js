@@ -1412,8 +1412,13 @@ function pnlRow(s) {
         : '<span class="lg-sub">—</span>';
     const totalCell = `<div class="${_sc(s.total_krw)}">${_ps(s.total_krw, 'KRW')}</div>`
         + (cur === 'USD' ? `<div class="lg-sub">${_ps(s.total, cur)}</div>` : '');
-    return `<tr>
-        <td class="lg-name">${s.name || s.code || ''}${soldBadge}</td>
+    const hasDetail = (s.real_detail || []).length > 0;
+    const chev = hasDetail ? '<i class="fa-solid fa-chevron-right pnl-chev"></i> ' : '';
+    const detailRow = hasDetail
+        ? `<tr class="pnl-detail" data-key="${s.key}" hidden><td colspan="8">${pnlDetail(s)}</td></tr>`
+        : '';
+    return `<tr class="pnl-row ${hasDetail ? 'has-detail' : ''}" data-key="${s.key}">
+        <td class="lg-name">${chev}${s.name || s.code || ''}${soldBadge}</td>
         <td class="num">${s.qty ? _fmtInt(s.qty) : '—'}</td>
         <td class="num">${s.held ? _pm(s.avg, cur) : '—'}</td>
         <td class="num">${s.held ? _pm(s.price, cur) : '—'}</td>
@@ -1421,7 +1426,50 @@ function pnlRow(s) {
         <td class="num">${realCell}</td>
         <td class="num">${totalCell}</td>
         <td class="c">${cur}</td>
-    </tr>`;
+    </tr>${detailRow}`;
+}
+
+function pnlDetail(s) {
+    const d = s.real_detail || [];
+    if (!d.length) return '';
+    if (d[0].kind === 'summary') {
+        const x = d[0];
+        return `<div class="pd-summary">매수원가 ${_pm(x.buy_amt, 'KRW')} · 매도금액 ${_pm(x.sell_amt, 'KRW')} `
+            + `· 세금 ${_pm(x.tax, 'KRW')} · 실현 <span class="${_sc(x.rlzt)}">${_ps(x.rlzt, 'KRW')}</span></div>`;
+    }
+    const rows = d.map(x => {
+        const md = x.date && x.date.length === 8 ? `${x.date.slice(4, 6)}-${x.date.slice(6, 8)}` : (x.date || '');
+        return `<tr>
+            <td>${md}</td>
+            <td class="num">${_fmtInt(x.qty)}</td>
+            <td class="num">$${(Number(x.sell_px) || 0).toFixed(2)}</td>
+            <td class="num">$${(Number(x.avg_px) || 0).toFixed(2)}</td>
+            <td class="num ${_sc(x.deal_pl)}">${_ps(x.deal_pl, 'KRW')}</td>
+            <td class="num ${_sc(x.fx_pl)}">${_ps(x.fx_pl, 'KRW')}</td>
+            <td class="num">$${(Number(x.fee) || 0).toFixed(2)}</td>
+            <td class="num ${_sc(x.rlzt)}">${_ps(x.rlzt, 'KRW')}</td>
+        </tr>`;
+    }).join('');
+    return `<table class="pd-table"><thead><tr>
+        <th>매도일</th><th class="num">수량</th><th class="num">매도가</th><th class="num">평단</th>
+        <th class="num">매매손익</th><th class="num">환차손익</th><th class="num">수수료</th><th class="num">실현</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+let pnlInited = false;
+function initPnlControls() {
+    if (pnlInited) return;
+    pnlInited = true;
+    const tbody = document.getElementById('pnl-tbody');
+    if (tbody) tbody.addEventListener('click', e => {
+        const row = e.target.closest('tr.pnl-row');
+        if (!row || !row.classList.contains('has-detail')) return;
+        const det = row.nextElementSibling;
+        if (det && det.classList.contains('pnl-detail')) {
+            det.hidden = !det.hidden;
+            row.classList.toggle('open', !det.hidden);
+        }
+    });
 }
 
 function renderPnlSummary(d) {
@@ -1435,6 +1483,7 @@ function renderPnlSummary(d) {
 }
 
 async function loadPnl() {
+    initPnlControls();
     const tbody = document.getElementById('pnl-tbody');
     try {
         const d = await fetch('/api/ledger/pnl?_=' + Date.now()).then(r => r.json());

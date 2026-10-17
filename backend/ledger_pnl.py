@@ -62,7 +62,7 @@ async def build_pnl() -> dict:
                 "qty": 0, "avg": 0.0, "price": 0.0,
                 "unreal": 0.0, "unreal_pct": None,
                 "real": 0.0, "real_krw": 0.0, "real_cost_krw": 0.0,
-                "real_pct": None, "held": False,
+                "real_pct": None, "held": False, "real_detail": [],
             }
         return syms[key]
 
@@ -89,6 +89,12 @@ async def build_pnl() -> dict:
         r["real_krw"] = _f(p.get("prls_amt"))
         r["real_pct"] = _f(p.get("plrt")) if str(p.get("plrt") or "") != "" else None
         r["currency"] = "KRW"
+        r["real_detail"] = [{
+            "kind": "summary", "ccy": "KRW",
+            "buy_amt": _f(p.get("byov_stpl_amt")), "sell_amt": _f(p.get("seln_stpl_amt")),
+            "tax": _f(p.get("wtax_amt")), "fee": _f(p.get("deal_fee_amt")),
+            "rlzt": _f(p.get("prls_amt")),
+        }]
 
     # 실현(해외): 매도 건별 → 종목 합산. rlzt_prls_amt=원화 실현(환차 포함),
     # frcr_rlzt_ernn_amt=외화(USD) 실현, wncr_byov_amt=원화 매입원가(손익률 분모).
@@ -100,6 +106,17 @@ async def build_pnl() -> dict:
         r["real"] += _f(p.get("frcr_rlzt_ernn_amt"))     # USD
         r["real_krw"] += _f(p.get("rlzt_prls_amt"))      # KRW(환차 포함)
         r["real_cost_krw"] += _f(p.get("wncr_byov_amt"))
+        r["real_detail"].append({
+            "kind": "sell", "ccy": "USD", "date": p.get("oder_date"),
+            "qty": _f(p.get("seln_qty")),
+            "sell_px": _f(p.get("frcr_seln_unpr")),       # USD 매도단가
+            "avg_px": _f(p.get("byov_unpr")),             # USD 매입평단
+            "deal_pl": _f(p.get("wncr_deal_prls_amt")),   # KRW 매매손익
+            "fx_pl": _f(p.get("wncr_fed_prls_amt")),      # KRW 환차손익
+            "fee": _f(p.get("cntg_cfee")),                # USD 수수료
+            "rlzt": _f(p.get("rlzt_prls_amt")),           # KRW 실현
+            "rlzt_usd": _f(p.get("frcr_rlzt_ernn_amt")),  # USD 실현
+        })
 
     out, real_krw, unreal_krw = [], 0.0, 0.0
     for r in syms.values():
