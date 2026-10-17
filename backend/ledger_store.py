@@ -200,24 +200,65 @@ def _exec_to_display(e: dict) -> dict:
     }
 
 
-def get_merged(date_from: str | None = None, date_to: str | None = None) -> list[dict]:
-    """정산(거래내역)+체결(주문내역)을 병합. 정산에 이미 있는 체결은 중복 제거.
+def _qint(qty) -> int:
+    try:
+        return int(round(float(qty or 0)))
+    except (TypeError, ValueError):
+        return 0
 
-    매칭키=(거래일, 종목, 매수/매도, 수량). 정산되면 체결행은 가려지고 정산행만 남는다.
+
+def _days_between(d1: str, d2: str):
+    """d2 - d1 (일). YYYYMMDD. 파싱 실패 시 None."""
+    try:
+        return (datetime.strptime(d2, "%Y%m%d") - datetime.strptime(d1, "%Y%m%d")).days
+    except (TypeError, ValueError):
+        return None
+
+
+SETTLE_LAG_DAYS = 6   # 체결→결제(정산) 지연 허용창(T+2 국내 ~ T+3 해외 + 주말)
+
+
+def get_merged(date_from: str | None = None, date_to: str | None = None) -> list[dict]:
+    """정산(거래내역)+체결(주문내역)을 병합.
+
+    매매(주식 매수/매도)는 '체결=거래일'을 정본으로 쓴다. 거래내역(정산)은 결제일
+    기준이라 같은 매매가 결제일로 다시 찍히므로, 체결과 매칭되는 정산행(결제일)은
+    숨긴다. 매칭=(종목·매수/매도·수량) + 정산일이 체결일+[0..LAG]일 창 안.
+    매칭되는 체결이 없는 과거 매매(체결 수집창 밖)는 정산행(결제일)으로 남는다.
+    현금/입출금/환전/이관 등 비매매 정산행은 그대로 둔다.
     """
     settle = get_tx(1000000, 0, date_from, date_to)
+    execs = get_exec(date_from, date_to)
+
+    # 체결 버킷: (종목, 매수매도, 수량) -> [체결들] (거래일 오름차순), 1:1 소비
+    buckets: dict[tuple, list[dict]] = {}
+    for e in execs:
+        key = (_sym_key(e.get("iscd")), e.get("side"), _qint(e.get("qty")))
+        buckets.setdefault(key, []).append(e)
+    for lst in buckets.values():
+        lst.sort(key=lambda e: e.get("oder_date") or "")
+    consumed: set = set()
+
+    rows: list[dict] = []
     for r in settle:
+        if _is_trade_name(r["smcd_name"]):
+            key = (_sym_key(r["iscd"]),
+                   "buy" if r["io_cls_code"] == "2" else "sell", _qint(r["qty"]))
+            matched = None
+            for e in buckets.get(key, []):
+                if id(e) in consumed:
+                    continue
+                gap = _days_between(e.get("oder_date") or "", r["tr_date"] or "")
+                if gap is not None and 0 <= gap <= SETTLE_LAG_DAYS:
+                    matched = e
+                    break
+            if matched is not None:
+                consumed.add(id(matched))   # 체결이 대표 → 결제일 정산행 숨김
+                continue
         r["source"] = "settle"
-    settle_keys = {
-        _trade_key(r["tr_date"], r["iscd"], "buy" if r["io_cls_code"] == "2" else "sell", r["qty"])
-        for r in settle if _is_trade_name(r["smcd_name"])
-    }
-    rows = list(settle)
-    for e in get_exec(date_from, date_to):
-        k = _trade_key(e.get("oder_date"), e.get("iscd"), e.get("side"), e.get("qty"))
-        if k in settle_keys:
-            continue
-        rows.append(_exec_to_display(e))
+        rows.append(r)
+
+    rows.extend(_exec_to_display(e) for e in execs)
 
     def _sortk(r):
         try:
