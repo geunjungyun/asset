@@ -1240,6 +1240,8 @@ header {
     }
     .main-content.mode-ledger { display: block; height: 100vh; overflow: auto; }
     .main-content.mode-ledger .ledger-page { margin-bottom: 0; }
+    .main-content.mode-portfolio { display: block; height: 100vh; overflow: auto; }
+    .main-content.mode-portfolio .pnl-page { margin-bottom: 0; }
 }
 
 /* ── 입출금·매매 내역(원장) ─────────────────────────────────────────── */
@@ -1305,3 +1307,26 @@ header {
     font-size: 0.62rem; font-weight: 600; vertical-align: middle;
 }
 .lg-badge.exec { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.lg-badge.sold { background: rgba(148, 163, 184, 0.18); color: var(--text-muted); }
+
+/* ── 포트폴리오 손익 ─────────────────────────────────────────────────── */
+.pnl-page { max-width: 1100px; }
+.pnl-summary { margin: 0.6rem 0 1rem; }
+.lsum-card.big {
+    display: inline-block; min-width: 280px;
+    background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px; padding: 0.9rem 1.3rem;
+}
+.lsum-card.big .lsum-label { font-size: 0.8rem; }
+.lsum-card.big .lsum-val { font-size: 2rem; font-weight: 700; margin-top: 2px; }
+.lsum-val.pos { color: var(--positive); }
+.lsum-val.neg { color: var(--negative); }
+.lsum-note { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; }
+
+.pnl-table td .pos, .pnl-total-row .pos { color: var(--positive); }
+.pnl-table td .neg, .pnl-total-row .neg { color: var(--negative); }
+.pnl-total-row td {
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    font-weight: 600; font-variant-numeric: tabular-nums; padding: 10px;
+}
+.pnl-total-row td.num { text-align: right; }

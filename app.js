@@ -1228,10 +1228,13 @@ function showView(name) {
     if (sp) sp.hidden = name !== 'sector';
     const lp = document.getElementById('ledger-page');
     if (lp) lp.hidden = name !== 'ledger';
+    const pp = document.getElementById('portfolio-page');
+    if (pp) pp.hidden = name !== 'portfolio';
     const main = document.querySelector('.main-content');
     if (main) {
         main.classList.toggle('mode-sector', name === 'sector');
         main.classList.toggle('mode-ledger', name === 'ledger');
+        main.classList.toggle('mode-portfolio', name === 'portfolio');
     }
     // 사이드바 활성 표시
     document.querySelectorAll('.sidebar nav li').forEach(li => {
@@ -1240,6 +1243,7 @@ function showView(name) {
     });
     if (name === 'sector') loadSectors(!sectorLoaded);
     if (name === 'ledger') loadLedger();
+    if (name === 'portfolio') loadPnl();
 }
 
 function initSidebarNav() {
@@ -1375,6 +1379,82 @@ function initLedgerControls() {
         catch (e) { /* noop */ }
         finally { sync.disabled = false; sync.classList.remove('busy'); }
     });
+}
+
+// ── 포트폴리오 손익(실현+미실현=총수익) ──────────────────────────────────── //
+function _sc(v) { return (Number(v) || 0) >= 0 ? 'pos' : 'neg'; }
+function _pm(v, cur) {   // 금액(부호 없음)
+    const n = Number(v) || 0;
+    return cur === 'USD'
+        ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '₩' + Math.round(n).toLocaleString('ko-KR');
+}
+function _ps(v, cur) {   // 금액(부호 포함)
+    const n = Number(v) || 0;
+    return (n >= 0 ? '+' : '−') + _pm(Math.abs(n), cur);
+}
+function _pp(v) {
+    if (v === null || v === undefined || v === '') return '';
+    const n = Number(v);
+    return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+
+function pnlRow(s) {
+    const cur = s.currency;
+    const soldBadge = s.held ? '' : '<span class="lg-badge sold">매도완료</span>';
+    const unrealCell = s.held
+        ? `<div class="${_sc(s.unreal)}">${_ps(s.unreal, cur)}</div>`
+          + (s.unreal_pct != null ? `<div class="lg-sub">${_pp(s.unreal_pct)}</div>` : '')
+        : '<span class="lg-sub">—</span>';
+    const realCell = Number(s.real)
+        ? `<div class="${_sc(s.real)}">${_ps(s.real, cur)}</div>`
+          + (s.real_pct != null ? `<div class="lg-sub">${_pp(s.real_pct)}</div>` : '')
+        : '<span class="lg-sub">—</span>';
+    const totalCell = `<div class="${_sc(s.total_krw)}">${_ps(s.total_krw, 'KRW')}</div>`
+        + (cur === 'USD' ? `<div class="lg-sub">${_ps(s.total, cur)}</div>` : '');
+    return `<tr>
+        <td class="lg-name">${s.name || s.code || ''}${soldBadge}</td>
+        <td class="num">${s.qty ? _fmtInt(s.qty) : '—'}</td>
+        <td class="num">${s.held ? _pm(s.avg, cur) : '—'}</td>
+        <td class="num">${s.held ? _pm(s.price, cur) : '—'}</td>
+        <td class="num">${unrealCell}</td>
+        <td class="num">${realCell}</td>
+        <td class="num">${totalCell}</td>
+        <td class="c">${cur}</td>
+    </tr>`;
+}
+
+function renderPnlSummary(d) {
+    const el = document.getElementById('pnl-summary');
+    if (!el) return;
+    const t = d.summary || {};
+    el.innerHTML =
+        `<div class="lsum-card big"><div class="lsum-label">총수익 (실현 + 미실현)</div>`
+        + `<div class="lsum-val ${_sc(t.total_krw)}">${_ps(t.total_krw, 'KRW')}</div>`
+        + `<div class="lsum-note">개설시점 누적 · 고시환율 ₩${_fmtInt(d.fx)} · ${d.as_of || ''}</div></div>`;
+}
+
+async function loadPnl() {
+    const tbody = document.getElementById('pnl-tbody');
+    try {
+        const d = await fetch('/api/ledger/pnl?_=' + Date.now()).then(r => r.json());
+        renderPnlSummary(d);
+        const syms = d.symbols || [];
+        if (tbody) tbody.innerHTML = syms.length
+            ? syms.map(pnlRow).join('')
+            : '<tr><td colspan="8" class="loading-row">데이터가 없습니다.</td></tr>';
+        const t = d.summary || {};
+        const tf = document.getElementById('pnl-tfoot');
+        if (tf) tf.innerHTML = `<tr class="pnl-total-row">
+            <td>합계</td><td class="num"></td><td class="num"></td><td class="num"></td>
+            <td class="num ${_sc(t.unreal_krw)}">${_ps(t.unreal_krw, 'KRW')}</td>
+            <td class="num ${_sc(t.real_krw)}">${_ps(t.real_krw, 'KRW')}</td>
+            <td class="num ${_sc(t.total_krw)}">${_ps(t.total_krw, 'KRW')}</td><td></td></tr>`;
+        const u = document.getElementById('pnl-updated');
+        if (u) u.textContent = '기준: ' + (d.as_of || '');
+    } catch (e) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="loading-row">불러올 수 없습니다.</td></tr>';
+    }
 }
 
 function initSectorPeriodToggle() {

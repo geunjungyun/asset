@@ -20,7 +20,7 @@
                 <ul>
                     <li class="active"><a href="#" data-view="dashboard"><i class="fa-solid fa-house"></i> 대시보드</a></li>
                     <li><a href="#" data-view="sector"><i class="fa-solid fa-layer-group"></i> 섹터 추이</a></li>
-                    <li><a href="#"><i class="fa-solid fa-chart-pie"></i> 포트폴리오</a></li>
+                    <li><a href="#" data-view="portfolio"><i class="fa-solid fa-chart-pie"></i> 포트폴리오</a></li>
                     <li><a href="#" data-view="ledger"><i class="fa-solid fa-arrow-right-arrow-left"></i> 입출금 내역</a></li>
                     <li><a href="#"><i class="fa-solid fa-gear"></i> 설정</a></li>
                 </ul>
@@ -308,6 +308,37 @@
                 <!-- 추이 그래프 -->
                 <div class="sector-grid" id="sector-grid" hidden>
                     <div class="loading-row">섹터 그래프를 불러오는 중...</div>
+                </div>
+            </section>
+
+            <!-- 포트폴리오 손익 (좌측 메뉴 '포트폴리오') -->
+            <section class="pnl-page glass-effect" id="portfolio-page" hidden>
+                <div class="section-head">
+                    <h2>
+                        <i class="fa-solid fa-chart-pie"></i> 포트폴리오 손익
+                        <span class="sector-sub">실현 + 미실현 = 총수익 · 개설시점 누적</span>
+                    </h2>
+                    <div class="section-actions">
+                        <span class="updated-at" id="pnl-updated"></span>
+                    </div>
+                </div>
+
+                <div class="pnl-summary" id="pnl-summary"></div>
+
+                <div class="ledger-table-wrap">
+                    <table class="ledger-table pnl-table" id="pnl-table">
+                        <thead>
+                            <tr>
+                                <th>종목</th><th class="num">보유</th><th class="num">평단</th>
+                                <th class="num">현재가</th><th class="num">미실현</th>
+                                <th class="num">실현</th><th class="num">총손익</th><th class="c">통화</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pnl-tbody">
+                            <tr><td colspan="8" class="loading-row">불러오는 중...</td></tr>
+                        </tbody>
+                        <tfoot id="pnl-tfoot"></tfoot>
+                    </table>
                 </div>
             </section>
 
