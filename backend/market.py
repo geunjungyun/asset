@@ -649,7 +649,7 @@ async def get_sector_board() -> dict:
     uniq_stocks = list(dict.fromkeys(stocks))
     allsyms = list(dict.fromkeys(["SPY", *etfs, *uniq_stocks]))
 
-    sem = asyncio.Semaphore(16)
+    sem = asyncio.Semaphore(12)
 
     async def _one(client, sym):
         async with sem:
@@ -659,6 +659,24 @@ async def get_sector_board() -> dict:
         res = await asyncio.gather(*[_one(client, s) for s in allsyms])
     metas = {sym: meta for sym, (meta, _pts) in res}
     series_map = {sym: [c for _t, c in (pts or []) if c is not None] for sym, (_meta, pts) in res}
+
+    # 레이트리밋 등으로 빈 응답인 종목 1회 재시도(완만하게)
+    empties = [s for s in allsyms if len(series_map.get(s, [])) < 2]
+    if empties:
+        await asyncio.sleep(1.0)
+        sem2 = asyncio.Semaphore(6)
+
+        async def _retry(client, sym):
+            async with sem2:
+                return sym, await _fetch_chart(client, sym, "1d", "1y")
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            res2 = await asyncio.gather(*[_retry(client, s) for s in empties])
+        for sym, (meta, pts) in res2:
+            cl = [c for _t, c in (pts or []) if c is not None]
+            if len(cl) >= 2:
+                series_map[sym] = cl
+                metas[sym] = meta
 
     spy_score = _score_asof(series_map.get("SPY", []))
 
