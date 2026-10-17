@@ -78,21 +78,26 @@ async def health() -> dict:
     }
 
 
-def _enrich_prdy(data: dict, market: str) -> dict:
-    """각 보유종목에 전일 종가 대비 등락율(prdy_pct) 추가. 차트와 동일한 일봉 스토어 기준."""
-    for h in data.get("holdings", []):
+async def _enrich_prdy(data: dict, market: str) -> dict:
+    """각 보유종목에 전일 종가 대비 등락율(prdy_pct) 추가.
+
+    전일종가는 일봉 스토어(= 차트 prev_close와 동일), 등락 기준가는 라이브 장중가
+    (= 차트 value와 동일한 메리츠 분봉)로 계산한다. 미 정규장 마감 시간대에도
+    주간거래가를 반영해 차트의 등락율과 일치한다. 라이브가 조회 실패 시 메리츠 현재가로 폴백.
+    """
+    async def _one(h: dict) -> None:
         code = h.get("code", "")
         mkt = h.get("market", market)
         pc = chart_service._prev_session_close(code, mkt)
         if not pc:
-            continue
-        # 전일대비는 '라이브 장중가'(차트와 동일한 5분봉 기준)로 계산한다.
-        # 미 정규장 마감 시간대엔 메리츠 현재가가 전일 종가로 고정돼 0%가 되므로,
-        # 라이브가가 있으면 그것을, 없으면(장 마감) 메리츠 현재가로 폴백한다.
-        price = chart_service._live_price(code, mkt) or h.get("current_price")
+            return
+        live = await chart_service._live_price(code, h.get("exch", ""), mkt)
+        price = live or h.get("current_price")
         if price:
             h["prdy_pct"] = round((price - pc) / pc * 100, 2)
             h["prdy_close"] = round(pc, 4)
+
+    await asyncio.gather(*(_one(h) for h in data.get("holdings", [])))
     return data
 
 
@@ -102,7 +107,7 @@ async def account_status() -> JSONResponse:
     # 1) 메리츠 실계좌(앱키 있으면)
     if meritz_settings.enabled:
         try:
-            return JSONResponse(_enrich_prdy(await meritz_client.get_balance(), "overseas"))
+            return JSONResponse(await _enrich_prdy(await meritz_client.get_balance(), "overseas"))
         except meritz_client.MeritzError as exc:
             fallback = kis_client.mock_balance()
             fallback["warning"] = f"메리츠 연동 실패로 예시 데이터를 표시합니다: {exc}"
@@ -124,7 +129,7 @@ async def account_domestic() -> JSONResponse:
     if not meritz_settings.enabled:
         return JSONResponse({"mode": "mock", "currency": "KRW", "holdings": [], "summary": {}})
     try:
-        return JSONResponse(_enrich_prdy(await meritz_client.get_domestic_balance(), "domestic"))
+        return JSONResponse(await _enrich_prdy(await meritz_client.get_domestic_balance(), "domestic"))
     except meritz_client.MeritzError as exc:
         return JSONResponse({"mode": "mock", "currency": "KRW", "holdings": [],
                              "summary": {}, "warning": f"국내 계좌 조회 실패: {exc}"})
