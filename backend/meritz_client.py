@@ -419,9 +419,12 @@ async def get_domestic_pnl_symbols(from_date: str = "00000000", to_date: str | N
     return data if isinstance(data, list) else []
 
 
-async def get_overseas_pnl(ctcd: str = "US", from_date: str = "00000000",
+async def get_overseas_pnl(ctcd: str = "840", from_date: str = "00000000",
                            to_date: str | None = None) -> list[dict]:
-    """해외 실현손익(국가코드 ctcd, 개설시점~)."""
+    """해외 실현손익(국가코드 ctcd=840 미국, 매도 건별, 개설시점~).
+
+    rlzt_prls_amt=원화 실현손익(환차 포함), frcr_rlzt_ernn_amt=외화(USD) 실현손익.
+    """
     to_date = to_date or datetime.now(KST).strftime("%Y%m%d")
     try:
         body = await _get(OVS_PNL_PATH, {"ctcd": ctcd, "oder_sta_date": from_date, "oder_fin_date": to_date})

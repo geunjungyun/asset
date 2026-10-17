@@ -61,7 +61,8 @@ async def build_pnl() -> dict:
                 "currency": "USD" if market == "overseas" else "KRW",
                 "qty": 0, "avg": 0.0, "price": 0.0,
                 "unreal": 0.0, "unreal_pct": None,
-                "real": 0.0, "real_pct": None, "held": False,
+                "real": 0.0, "real_krw": 0.0, "real_cost_krw": 0.0,
+                "real_pct": None, "held": False,
             }
         return syms[key]
 
@@ -79,29 +80,34 @@ async def build_pnl() -> dict:
                  unreal=_f(h.get("eval_pnl")), unreal_pct=h.get("pnl_rate"),
                  currency="KRW", held=True)
 
-    # 실현(국내 종목별)
+    # 실현(국내 종목별): prls_amt = 원화 실현손익
     for p in dom_real:
         r = rec("D:" + _digits(p.get("iscd")), "domestic", p.get("isnm") or "")
         if not r["name"]:
             r["name"] = p.get("isnm") or ""
-        r["real"] = _f(p.get("prls_amt"))
+        r["real"] = _f(p.get("prls_amt"))       # KRW
+        r["real_krw"] = _f(p.get("prls_amt"))
         r["real_pct"] = _f(p.get("plrt")) if str(p.get("plrt") or "") != "" else None
         r["currency"] = "KRW"
 
-    # 실현(해외) — 통화 단위는 데이터 확인 전까지 USD 가정(×환율). 데이터 생기면 검증 필요.
+    # 실현(해외): 매도 건별 → 종목 합산. rlzt_prls_amt=원화 실현(환차 포함),
+    # frcr_rlzt_ernn_amt=외화(USD) 실현, wncr_byov_amt=원화 매입원가(손익률 분모).
     for p in ovs_real:
         sym = p.get("iscd") or p.get("ovrs_stck_symb_iscd") or ""
-        r = rec("O:" + _osym(sym), "overseas", p.get("isnm") or p.get("kor_isnm") or "")
+        r = rec("O:" + _osym(sym), "overseas", p.get("kor_issu_abwr_name") or "")
         if not r["name"]:
-            r["name"] = p.get("isnm") or p.get("kor_isnm") or ""
-        r["real"] = _f(p.get("prls_amt"))
-        r["real_pct"] = _f(p.get("plrt")) if str(p.get("plrt") or "") != "" else None
+            r["name"] = p.get("kor_issu_abwr_name") or _osym(sym)
+        r["real"] += _f(p.get("frcr_rlzt_ernn_amt"))     # USD
+        r["real_krw"] += _f(p.get("rlzt_prls_amt"))      # KRW(환차 포함)
+        r["real_cost_krw"] += _f(p.get("wncr_byov_amt"))
 
     out, real_krw, unreal_krw = [], 0.0, 0.0
     for r in syms.values():
         mul = fx if r["market"] == "overseas" else 1.0
         r["unreal_krw"] = round(r["unreal"] * mul)
-        r["real_krw"] = round(r["real"] * mul)
+        r["real_krw"] = round(r["real_krw"])             # 이미 원화(국내 prls / 해외 rlzt)
+        if r["market"] == "overseas" and r["real_cost_krw"]:
+            r["real_pct"] = round(r["real_krw"] / r["real_cost_krw"] * 100, 2)
         r["total"] = round(r["unreal"] + r["real"], 2)
         r["total_krw"] = round(r["unreal_krw"] + r["real_krw"])
         real_krw += r["real_krw"]
