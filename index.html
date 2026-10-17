@@ -21,7 +21,7 @@
                     <li class="active"><a href="#" data-view="dashboard"><i class="fa-solid fa-house"></i> 대시보드</a></li>
                     <li><a href="#" data-view="sector"><i class="fa-solid fa-layer-group"></i> 섹터 추이</a></li>
                     <li><a href="#"><i class="fa-solid fa-chart-pie"></i> 포트폴리오</a></li>
-                    <li><a href="#"><i class="fa-solid fa-arrow-right-arrow-left"></i> 입출금 내역</a></li>
+                    <li><a href="#" data-view="ledger"><i class="fa-solid fa-arrow-right-arrow-left"></i> 입출금 내역</a></li>
                     <li><a href="#"><i class="fa-solid fa-gear"></i> 설정</a></li>
                 </ul>
             </nav>
@@ -308,6 +308,54 @@
                 <!-- 추이 그래프 -->
                 <div class="sector-grid" id="sector-grid" hidden>
                     <div class="loading-row">섹터 그래프를 불러오는 중...</div>
+                </div>
+            </section>
+
+            <!-- 입출금·매매 내역 (좌측 메뉴 '입출금 내역') -->
+            <section class="ledger-page glass-effect" id="ledger-page" hidden>
+                <div class="section-head">
+                    <h2>
+                        <i class="fa-solid fa-arrow-right-arrow-left"></i> 입출금·매매 내역
+                        <span class="sector-sub">메리츠 계좌 거래 로그 · MOUM 대조</span>
+                    </h2>
+                    <div class="section-actions">
+                        <button class="ledger-sync-btn" id="ledger-sync"><i class="fa-solid fa-rotate"></i> 동기화</button>
+                        <span class="updated-at" id="ledger-updated"></span>
+                    </div>
+                </div>
+
+                <div class="ledger-summary" id="ledger-summary"></div>
+
+                <div class="ledger-filters">
+                    <span class="lf-label">통화</span>
+                    <div class="chip-group" id="lf-currency">
+                        <button data-cur="all" class="active">전체</button>
+                        <button data-cur="KRW">KRW</button>
+                        <button data-cur="USD">USD</button>
+                    </div>
+                    <span class="lf-sep"></span>
+                    <span class="lf-label">유형</span>
+                    <div class="chip-group" id="lf-type">
+                        <button data-type="all" class="active">전체</button>
+                        <button data-type="trade">매매</button>
+                        <button data-type="cash">입출금</button>
+                        <button data-type="fx">환전</button>
+                        <button data-type="etc">기타</button>
+                    </div>
+                </div>
+
+                <div class="ledger-table-wrap">
+                    <table class="ledger-table" id="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>날짜</th><th>구분</th><th>종목</th>
+                                <th class="num">수량</th><th class="num">금액</th><th class="c">통화</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ledger-tbody">
+                            <tr><td colspan="6" class="loading-row">불러오는 중...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 

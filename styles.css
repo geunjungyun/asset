@@ -1238,4 +1238,65 @@ header {
     .main-content.mode-sector .sector-grid {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     }
+    .main-content.mode-ledger { display: block; height: 100vh; overflow: auto; }
+    .main-content.mode-ledger .ledger-page { margin-bottom: 0; }
+}
+
+/* ── 입출금·매매 내역(원장) ─────────────────────────────────────────── */
+.ledger-page { max-width: 1100px; }
+.ledger-sync-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(59, 130, 246, 0.12); color: var(--accent-blue);
+    border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 8px;
+    padding: 0.32rem 0.7rem; font-size: 0.78rem; cursor: pointer;
+}
+.ledger-sync-btn:hover { background: rgba(59, 130, 246, 0.2); }
+.ledger-sync-btn.busy i { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ledger-summary { display: flex; gap: 12px; margin: 0.6rem 0 0.9rem; flex-wrap: wrap; }
+.lsum-card {
+    background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 130px;
+}
+.lsum-label { font-size: 0.72rem; color: var(--text-muted); }
+.lsum-val { font-size: 1.4rem; font-weight: 600; color: var(--text-main); }
+.lsum-val.sm { font-size: 0.95rem; font-weight: 500; margin-top: 4px; }
+
+.ledger-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 0.7rem; }
+.lf-label { font-size: 0.72rem; color: var(--text-muted); }
+.lf-sep { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.12); margin: 0 4px; }
+.chip-group { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.chip-group button {
+    background: transparent; color: var(--text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 20px;
+    padding: 3px 12px; font-size: 0.74rem; cursor: pointer;
+}
+.chip-group button:hover { color: var(--text-main); border-color: rgba(255, 255, 255, 0.25); }
+.chip-group button.active {
+    background: rgba(59, 130, 246, 0.18); color: #93c5fd; border-color: rgba(59, 130, 246, 0.45);
+}
+
+.ledger-table-wrap { overflow-x: auto; }
+.ledger-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.ledger-table th {
+    text-align: left; font-weight: 500; color: var(--text-muted); font-size: 0.72rem;
+    padding: 8px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); white-space: nowrap;
+}
+.ledger-table th.num { text-align: right; }
+.ledger-table th.c { text-align: center; }
+.ledger-table td { padding: 9px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: top; }
+.ledger-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ledger-table td.c { text-align: center; color: var(--text-muted); font-size: 0.74rem; }
+.lg-row { cursor: pointer; }
+.lg-row:hover td { background: rgba(255, 255, 255, 0.03); }
+.lg-row.open td { background: rgba(59, 130, 246, 0.06); }
+.lg-date { color: var(--text-muted); white-space: nowrap; }
+.lg-name { color: var(--text-main); }
+.lg-amt .pos { color: var(--positive); }
+.lg-amt .neg { color: var(--negative); }
+.lg-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+.lg-detail td {
+    background: rgba(255, 255, 255, 0.02); color: var(--text-muted);
+    font-size: 0.72rem; padding: 6px 12px 10px;
 }

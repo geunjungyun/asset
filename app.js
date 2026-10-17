@@ -1220,20 +1220,26 @@ function renderMomMembers(d) {
 const DASH_SELECTORS = ['.market-charts-section', '.kis-section', '.holdings-charts', '.dashboard-grid'];
 function showView(name) {
     currentView = name;
-    const sector = name === 'sector';
+    const isDash = name === 'dashboard';
     DASH_SELECTORS.forEach(sel => {
-        document.querySelectorAll(sel).forEach(el => { el.hidden = sector; });
+        document.querySelectorAll(sel).forEach(el => { el.hidden = !isDash; });
     });
     const sp = document.getElementById('sector-page');
-    if (sp) sp.hidden = !sector;
+    if (sp) sp.hidden = name !== 'sector';
+    const lp = document.getElementById('ledger-page');
+    if (lp) lp.hidden = name !== 'ledger';
     const main = document.querySelector('.main-content');
-    if (main) main.classList.toggle('mode-sector', sector);
+    if (main) {
+        main.classList.toggle('mode-sector', name === 'sector');
+        main.classList.toggle('mode-ledger', name === 'ledger');
+    }
     // 사이드바 활성 표시
     document.querySelectorAll('.sidebar nav li').forEach(li => {
         const a = li.querySelector('a');
         li.classList.toggle('active', !!a && a.dataset.view === name);
     });
-    if (sector) loadSectors(!sectorLoaded);
+    if (name === 'sector') loadSectors(!sectorLoaded);
+    if (name === 'ledger') loadLedger();
 }
 
 function initSidebarNav() {
@@ -1242,6 +1248,131 @@ function initSidebarNav() {
             e.preventDefault();
             showView(a.dataset.view);
         });
+    });
+}
+
+// ── 입출금·매매 내역(원장) ─────────────────────────────────────────────── //
+let ledgerData = [];
+let ledgerFilter = { currency: 'all', type: 'all' };
+let ledgerLoaded = false;
+let ledgerInited = false;
+
+// 거래구분명(smcd_name)으로 유형 분류 (tr_type_code는 05=RP매수·주식매수 혼용이라 못 씀)
+function txCategory(name) {
+    const s = name || '';
+    if (/주식.*(매수|매도)/.test(s)) return 'trade';                 // 주식매수/매도, 해외주식 매수/매도
+    if (/환전/.test(s)) return 'fx';
+    if (/(입금|출금|이체)/.test(s) && !/주식/.test(s)) return 'cash'; // 전자계좌입출금, 외화이체입금
+    return 'etc';                                                    // 대체입고(이관)·RP·이용료 등
+}
+
+function _fmtInt(v) { return Math.round(Number(v) || 0).toLocaleString('ko-KR'); }
+function _fmtUsd(v) { return (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _fmtDate8(s) { return (s && s.length === 8) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : (s || '-'); }
+
+async function loadLedger(force) {
+    initLedgerControls();
+    if (ledgerLoaded && !force) { renderLedger(); return; }
+    const tbody = document.getElementById('ledger-tbody');
+    try {
+        const d = await fetch('/api/ledger/transactions?limit=1000').then(r => r.json());
+        ledgerData = (d.transactions || []).map(r => ({ ...r, _cat: txCategory(r.smcd_name) }));
+        ledgerLoaded = true;
+        renderLedgerSummary(d.stats);
+        renderLedger();
+        const u = document.getElementById('ledger-updated');
+        if (u) u.textContent = '기준: ' + new Date().toLocaleString('ko-KR', { hour12: false });
+    } catch (e) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="loading-row">불러올 수 없습니다.</td></tr>';
+    }
+}
+
+function renderLedgerSummary(st) {
+    const el = document.getElementById('ledger-summary');
+    if (!el || !st) return;
+    el.innerHTML =
+        `<div class="lsum-card"><div class="lsum-label">총 건수</div><div class="lsum-val">${st.rows ?? 0}</div></div>`
+        + `<div class="lsum-card"><div class="lsum-label">기간</div><div class="lsum-val sm">${_fmtDate8(st.min_date)} ~ ${_fmtDate8(st.max_date)}</div></div>`;
+}
+
+function ledgerRow(r) {
+    const inc = r.io_cls_code === '1';
+    const sign = inc ? '+' : '−';
+    const cls = inc ? 'pos' : 'neg';
+    const mmdd = (r.tr_date && r.tr_date.length === 8) ? `${r.tr_date.slice(4, 6)}-${r.tr_date.slice(6, 8)}` : (r.tr_date || '');
+    const qty = Number(r.qty) || 0;
+    const qtyCell = qty ? _fmtInt(qty) : '—';
+    let amtCell;
+    if (r.currency === 'USD' && Number(r.frcr_amt)) {
+        amtCell = `<div class="${cls}">${sign}$${_fmtUsd(r.frcr_amt)}</div>`
+            + (Number(r.amount) ? `<div class="lg-sub">₩${_fmtInt(r.amount)}</div>` : '');
+    } else if (Number(r.amount)) {
+        amtCell = `<div class="${cls}">${sign}₩${_fmtInt(r.amount)}</div>`;
+    } else if (Number(r.byng_unpr)) {
+        amtCell = `<div class="lg-sub">@${_fmtInt(r.byng_unpr)}</div>`;
+    } else {
+        amtCell = '<span class="lg-sub">—</span>';
+    }
+    const cur = r.currency === 'USD' ? '$' : '₩';
+    const det = [];
+    if (Number(r.fee)) det.push(`수수료 ${cur}${_fmtInt(r.fee)}`);
+    if (Number(r.tax)) det.push(`세금 ₩${_fmtInt(r.tax)}`);
+    if (Number(r.byng_unpr)) det.push(`매입단가 ${_fmtInt(r.byng_unpr)}`);
+    det.push(`거래코드 ${r.tr_type_code || '-'}`);
+    det.push(`#${r.srno}`);
+    return `<tr class="lg-row" data-srno="${r.srno}">
+        <td class="lg-date">${mmdd}</td>
+        <td class="lg-kind">${r.smcd_name || '-'}</td>
+        <td class="lg-name">${r.name || '—'}</td>
+        <td class="num">${qtyCell}</td>
+        <td class="num lg-amt">${amtCell}</td>
+        <td class="c lg-cur">${r.currency || ''}</td>
+    </tr>
+    <tr class="lg-detail" data-srno="${r.srno}" hidden><td colspan="6">${det.join(' · ')}</td></tr>`;
+}
+
+function renderLedger() {
+    const tbody = document.getElementById('ledger-tbody');
+    if (!tbody) return;
+    const f = ledgerFilter;
+    const rows = ledgerData.filter(r =>
+        (f.currency === 'all' || r.currency === f.currency) &&
+        (f.type === 'all' || r._cat === f.type));
+    tbody.innerHTML = rows.length
+        ? rows.map(ledgerRow).join('')
+        : '<tr><td colspan="6" class="loading-row">해당 거래가 없습니다.</td></tr>';
+}
+
+function initLedgerControls() {
+    if (ledgerInited) return;
+    ledgerInited = true;
+    const cur = document.getElementById('lf-currency');
+    const typ = document.getElementById('lf-type');
+    if (cur) cur.addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        cur.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active'); ledgerFilter.currency = b.dataset.cur; renderLedger();
+    });
+    if (typ) typ.addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        typ.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active'); ledgerFilter.type = b.dataset.type; renderLedger();
+    });
+    const tbody = document.getElementById('ledger-tbody');
+    if (tbody) tbody.addEventListener('click', e => {
+        const row = e.target.closest('tr.lg-row'); if (!row) return;
+        const det = row.nextElementSibling;
+        if (det && det.classList.contains('lg-detail')) {
+            det.hidden = !det.hidden;
+            row.classList.toggle('open', !det.hidden);
+        }
+    });
+    const sync = document.getElementById('ledger-sync');
+    if (sync) sync.addEventListener('click', async () => {
+        sync.disabled = true; sync.classList.add('busy');
+        try { await fetch('/api/ledger/sync', { method: 'POST' }); await loadLedger(true); }
+        catch (e) { /* noop */ }
+        finally { sync.disabled = false; sync.classList.remove('busy'); }
     });
 }
 
