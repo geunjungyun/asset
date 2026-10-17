@@ -403,3 +403,44 @@ async def get_transactions(from_date: str = "00000000", to_date: str | None = No
             continue
         break
     return out
+
+
+# --------------------------------------------------------------------------- #
+# 체결내역(주문내역) — 거래내역(정산)보다 먼저 체결 당일 반영
+# --------------------------------------------------------------------------- #
+OVS_ORDERS_TODAY_PATH = "/trading/v1/overseas/orders/today"
+ORDERS_HISTORY_PATH = "/trading/v1/orders/history"
+
+
+async def get_overseas_orders_today() -> list[dict]:
+    """해외주식 당일 주문·체결 내역(체결분만). 당일만 제공(날짜 지정 불가)."""
+    try:
+        body = await _get(OVS_ORDERS_TODAY_PATH, {"cntg_cls_code": "1", "seln_byov_clcd": "0"})
+    except MeritzError:
+        return []
+    data = body.get("data")
+    return data if isinstance(data, list) else []
+
+
+async def get_domestic_orders_history(oder_date: str) -> list[dict]:
+    """국내주식 주문·체결 내역(특정일, 체결분만). 연속조회 지원."""
+    out: list[dict] = []
+    tr_cont_key: str | None = None
+    for _ in range(50):
+        params = {"oder_date": oder_date, "deal_cls_code": "0", "cntg_cls_code": "1"}
+        if tr_cont_key is not None:
+            params["tr_cont"] = "1"
+            params["tr_cont_key"] = tr_cont_key
+        try:
+            body = await _get(ORDERS_HISTORY_PATH, params)
+        except MeritzError:
+            return out
+        data = body.get("data")
+        if isinstance(data, list):
+            out.extend(data)
+        if str(body.get("tr_cont")) == "1" and body.get("tr_cont_key"):
+            tr_cont_key = body["tr_cont_key"]
+            await asyncio.sleep(0.15)
+            continue
+        break
+    return out

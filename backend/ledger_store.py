@@ -7,6 +7,7 @@ candle_store 와 동일한 패턴(동기 sqlite3 + WAL). 비동기에서는 asyn
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -20,6 +21,11 @@ COLUMNS = [
     "srno", "tr_date", "io_cls_code", "tr_type_code", "smcd", "smcd_name",
     "iscd", "name", "qty", "amount", "byng_unpr", "fee", "tax",
     "frcr_amt", "currency", "cncl_yn", "raw",
+]
+
+EXEC_COLUMNS = [
+    "exec_id", "oder_date", "market", "iscd", "name", "side", "qty",
+    "price", "amount", "frcr", "currency", "status", "exec_time", "raw",
 ]
 
 
@@ -65,6 +71,25 @@ def init_db() -> None:
             )"""
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_ledger_date ON ledger_tx(tr_date)")
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS ledger_exec(
+                exec_id    TEXT PRIMARY KEY,   -- market:oder_date:oder_no
+                oder_date  TEXT,
+                market     TEXT,               -- 'overseas' | 'domestic'
+                iscd       TEXT,
+                name       TEXT,
+                side       TEXT,               -- 'buy' | 'sell'
+                qty        REAL,               -- 체결수량
+                price      REAL,               -- 체결단가
+                amount     REAL,               -- 원화 금액(국내) 또는 0
+                frcr       REAL,               -- 외화 금액(해외)
+                currency   TEXT,
+                status     TEXT,
+                exec_time  TEXT,
+                raw        TEXT
+            )"""
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_exec_date ON ledger_exec(oder_date)")
 
 
 def upsert_tx(rows: list[dict]) -> int:
@@ -109,3 +134,103 @@ def max_srno() -> int:
     with _db() as c:
         row = c.execute("SELECT MAX(srno) m FROM ledger_tx").fetchone()
     return int(row["m"]) if row and row["m"] is not None else 0
+
+
+# --------------------------------------------------------------------------- #
+# 체결내역(ledger_exec) + 정산/체결 병합
+# --------------------------------------------------------------------------- #
+def upsert_exec(rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    cols = ", ".join(EXEC_COLUMNS)
+    ph = ", ".join(["?"] * len(EXEC_COLUMNS))
+    with _lock, _db() as c:
+        c.executemany(
+            f"INSERT OR REPLACE INTO ledger_exec({cols}) VALUES({ph})",
+            [tuple(r.get(k) for k in EXEC_COLUMNS) for r in rows],
+        )
+    return len(rows)
+
+
+def get_exec(date_from: str | None = None, date_to: str | None = None) -> list[dict]:
+    where, params = [], []
+    if date_from:
+        where.append("oder_date >= ?"); params.append(date_from)
+    if date_to:
+        where.append("oder_date <= ?"); params.append(date_to)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    with _db() as c:
+        return [dict(r) for r in c.execute(
+            f"SELECT {', '.join(EXEC_COLUMNS)} FROM ledger_exec{clause} ORDER BY oder_date DESC",
+            params).fetchall()]
+
+
+_TRADE_RE = re.compile(r"주식.*(매수|매도)")
+
+
+def _is_trade_name(nm: str | None) -> bool:
+    return bool(_TRADE_RE.search(nm or ""))
+
+
+def _sym_key(iscd: str | None) -> str:
+    s = (iscd or "").strip().upper()
+    return s if "." in s else "".join(ch for ch in s if ch.isdigit())
+
+
+def _trade_key(date: str, iscd: str | None, side: str, qty) -> tuple:
+    try:
+        q = int(round(float(qty or 0)))
+    except (TypeError, ValueError):
+        q = 0
+    return (date, _sym_key(iscd), side, q)
+
+
+def _exec_to_display(e: dict) -> dict:
+    buy = e.get("side") == "buy"
+    ovs = e.get("market") == "overseas"
+    smcd = ("해외주식 " + ("매수" if buy else "매도")) if ovs else ("주식매수" if buy else "주식매도")
+    return {
+        "srno": e.get("exec_id"), "tr_date": e.get("oder_date"),
+        "io_cls_code": "2" if buy else "1", "tr_type_code": "",
+        "smcd": "", "smcd_name": smcd, "iscd": e.get("iscd"), "name": e.get("name"),
+        "qty": e.get("qty"), "amount": e.get("amount") or 0, "byng_unpr": e.get("price") or 0,
+        "fee": 0, "tax": 0, "frcr_amt": e.get("frcr") or 0,
+        "currency": e.get("currency"), "cncl_yn": "", "raw": e.get("raw") or "",
+        "source": "exec",
+    }
+
+
+def get_merged(date_from: str | None = None, date_to: str | None = None) -> list[dict]:
+    """정산(거래내역)+체결(주문내역)을 병합. 정산에 이미 있는 체결은 중복 제거.
+
+    매칭키=(거래일, 종목, 매수/매도, 수량). 정산되면 체결행은 가려지고 정산행만 남는다.
+    """
+    settle = get_tx(1000000, 0, date_from, date_to)
+    for r in settle:
+        r["source"] = "settle"
+    settle_keys = {
+        _trade_key(r["tr_date"], r["iscd"], "buy" if r["io_cls_code"] == "2" else "sell", r["qty"])
+        for r in settle if _is_trade_name(r["smcd_name"])
+    }
+    rows = list(settle)
+    for e in get_exec(date_from, date_to):
+        k = _trade_key(e.get("oder_date"), e.get("iscd"), e.get("side"), e.get("qty"))
+        if k in settle_keys:
+            continue
+        rows.append(_exec_to_display(e))
+
+    def _sortk(r):
+        try:
+            seq = int(r.get("srno"))
+        except (TypeError, ValueError):
+            seq = 0
+        return (r.get("tr_date") or "", seq)
+
+    rows.sort(key=_sortk, reverse=True)
+    return rows
+
+
+def exec_stats() -> dict:
+    with _db() as c:
+        row = c.execute("SELECT COUNT(*) n, MIN(oder_date) mn, MAX(oder_date) mx FROM ledger_exec").fetchone()
+    return {"rows": row["n"], "min_date": row["mn"], "max_date": row["mx"]}

@@ -1278,7 +1278,7 @@ async function loadLedger(force) {
         const d = await fetch('/api/ledger/transactions?limit=1000').then(r => r.json());
         ledgerData = (d.transactions || []).map(r => ({ ...r, _cat: txCategory(r.smcd_name) }));
         ledgerLoaded = true;
-        renderLedgerSummary(d.stats);
+        renderLedgerSummary(d.stats, d.total);
         renderLedger();
         const u = document.getElementById('ledger-updated');
         if (u) u.textContent = '기준: ' + new Date().toLocaleString('ko-KR', { hour12: false });
@@ -1287,11 +1287,11 @@ async function loadLedger(force) {
     }
 }
 
-function renderLedgerSummary(st) {
+function renderLedgerSummary(st, total) {
     const el = document.getElementById('ledger-summary');
     if (!el || !st) return;
     el.innerHTML =
-        `<div class="lsum-card"><div class="lsum-label">총 건수</div><div class="lsum-val">${st.rows ?? 0}</div></div>`
+        `<div class="lsum-card"><div class="lsum-label">총 건수</div><div class="lsum-val">${total ?? st.rows ?? 0}</div></div>`
         + `<div class="lsum-card"><div class="lsum-label">기간</div><div class="lsum-val sm">${_fmtDate8(st.min_date)} ~ ${_fmtDate8(st.max_date)}</div></div>`;
 }
 
@@ -1320,9 +1320,10 @@ function ledgerRow(r) {
     if (Number(r.byng_unpr)) det.push(`매입단가 ${_fmtInt(r.byng_unpr)}`);
     det.push(`거래코드 ${r.tr_type_code || '-'}`);
     det.push(`#${r.srno}`);
+    const badge = r.source === 'exec' ? '<span class="lg-badge exec">체결</span>' : '';
     return `<tr class="lg-row" data-srno="${r.srno}">
         <td class="lg-date">${mmdd}</td>
-        <td class="lg-kind">${r.smcd_name || '-'}</td>
+        <td class="lg-kind">${r.smcd_name || '-'}${badge}</td>
         <td class="lg-name">${r.name || '—'}</td>
         <td class="num">${qtyCell}</td>
         <td class="num lg-amt">${amtCell}</td>

@@ -188,18 +188,23 @@ async def candles_stats() -> dict:
 async def ledger_transactions(limit: int = 200, offset: int = 0,
                               date_from: str | None = None,
                               date_to: str | None = None) -> dict:
-    """원장 거래·입출금 내역(최신순). 날짜(YYYYMMDD) 범위 필터 옵션."""
-    rows = await asyncio.to_thread(ledger_store.get_tx, limit, offset, date_from, date_to)
+    """원장 거래·매매 내역(정산+체결 병합, 최신순). 날짜(YYYYMMDD) 범위 옵션."""
+    merged = await asyncio.to_thread(ledger_store.get_merged, date_from, date_to)
+    page = merged[offset:offset + limit]
     st = await asyncio.to_thread(ledger_store.stats)
-    return {"stats": st, "count": len(rows), "transactions": rows}
+    est = await asyncio.to_thread(ledger_store.exec_stats)
+    return {"stats": st, "exec_stats": est, "total": len(merged),
+            "count": len(page), "transactions": page}
 
 
 @app.post("/api/ledger/sync")
 async def ledger_sync_now() -> dict:
-    """수동 수집 트리거(거래내역 재조회·upsert)."""
+    """수동 수집 트리거(거래내역 + 체결내역 재조회·upsert)."""
     n = await ledger_sync.sync_transactions()
+    ne = await ledger_sync.sync_executions()
     st = await asyncio.to_thread(ledger_store.stats)
-    return {"synced": n, "stats": st}
+    est = await asyncio.to_thread(ledger_store.exec_stats)
+    return {"synced": n, "exec_synced": ne, "stats": st, "exec_stats": est}
 
 
 @app.get("/api/market")
