@@ -32,6 +32,7 @@ import collector
 import ledger_store
 import ledger_sync
 import ledger_pnl
+import sector_config
 from config import settings, meritz_settings
 from kis_ws import engine
 
@@ -226,6 +227,22 @@ async def market_status() -> dict:
 async def sectors_status() -> dict:
     """11개 GICS 섹터(SPDR ETF)의 기간별 추이. 섹터별 주/월 모니터링용."""
     return await market.get_sectors()
+
+
+@app.get("/api/sectors/config")
+async def sectors_config_get() -> dict:
+    """섹터▸산업▸종목 동적 구성(사용자 편집 대상)."""
+    return await asyncio.to_thread(sector_config.get_config)
+
+
+@app.put("/api/sectors/config")
+async def sectors_config_put(cfg: dict) -> JSONResponse:
+    """구성 저장(산업·종목 편집). 대분류는 그대로, 산업·종목만 반영."""
+    try:
+        saved = await asyncio.to_thread(sector_config.save_config, cfg)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(saved)
 
 
 @app.get("/api/sectors/{key}/members")

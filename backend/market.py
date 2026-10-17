@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 
+import sector_config
 from config import BASE_DIR
 
 YF_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -70,6 +71,19 @@ SECTOR_MEMBERS = {
     "xlu":  ["NEE", "SO", "DUK", "CEG", "AEP", "D", "EXC", "SRE"],
 }
 
+# 사용자 관심그룹(앱의 관심 목록 기반). 그룹명 → Yahoo 티커 목록.
+# GICS 섹터와 별개로, 섹터 추이에서 '관심그룹' 모멘텀으로 조회.
+WATCH_GROUPS: dict[str, list[str]] = {
+    "빅테크":     ["GOOGL", "NVDA", "AAPL", "AMZN", "MSFT", "META", "TSLA"],
+    "반도체":     ["NVDA", "MRVL", "SNDK", "MU", "AMD", "INTC", "WDC", "STX"],
+    "ai인프라":   ["AMAT", "ASML", "LITE", "CBRS", "IREN", "CRWV"],
+    "양자":       ["QBTS", "RGTI", "IONQ"],
+    "소프트웨어": ["CRWD", "PANW", "ORCL", "PLTR"],
+    "바이오":     ["AMGN", "LLY", "NVO", "MRK", "JNJ", "PFE", "MRNA"],
+    "에너지":     ["XOM", "CVX", "COP", "EOG"],
+    "서버":       ["IBM", "ORCL", "DELL"],
+}
+
 # 사용자 보유 종목(섹터 드릴다운에서 강조 표시)
 USER_HELD = {"MU", "SNDK", "GOOGL", "MRVL", "AMD", "AMGN", "LLY", "NVDA"}
 
@@ -117,7 +131,8 @@ INDUSTRY = {
 
 
 def _industry(sym: str) -> str:
-    return INDUSTRY.get(sym, "기타")
+    # 동적 구성(사용자 편집) 우선, 없으면 기본 INDUSTRY
+    return sector_config.industry_of(sym) or INDUSTRY.get(sym, "기타")
 
 # 장중(5분봉) 기간 → 최근 N일
 INTRA_DAYS = {"1D": 1, "2D": 2, "3D": 3, "4D": 4, "5D": 5}
@@ -373,7 +388,7 @@ MEMBER_CACHE_TTL = 60  # 초
 
 async def get_sector_members(key: str, period: str) -> dict:
     """특정 섹터의 대표 구성종목들을 선택 기간으로 조회(등락률 내림차순)."""
-    syms = SECTOR_MEMBERS.get(key, [])
+    syms = sector_config.members(key)
     if not syms:
         return {"key": key, "period": period, "members": []}
 
@@ -432,7 +447,7 @@ def _momentum(r1w: float, r1m: float, r3m: float) -> dict:
 
 async def get_sector_momentum(key: str) -> dict:
     """섹터 구성종목의 1주/1개월/3개월 수익률 + 모멘텀 점수/가속(점수 내림차순)."""
-    syms = SECTOR_MEMBERS.get(key, [])
+    syms = sector_config.members(key)
     if not syms:
         return {"key": key, "members": []}
 
@@ -497,6 +512,83 @@ async def get_sector_momentum(key: str) -> dict:
 
     data = {"key": key, "members": members, "industries": industries}
     _mom_cache[key] = {"_ts": time.time(), "data": data}
+    return data
+
+
+# --------------------------------------------------------------------------- #
+# 관심그룹 모멘텀 (사용자 정의 그룹)
+# --------------------------------------------------------------------------- #
+_wgroups_cache: dict | None = None
+WGROUPS_TTL = 60  # 초
+
+
+def _member_momentum(sym: str, meta: dict | None, pts: list) -> dict:
+    """일봉 시계열 → 종목 모멘텀 dict(섹터 구성종목과 동일 포맷)."""
+    closes = [c for _t, c in pts if c is not None]
+    if len(closes) < 2:
+        return {"code": sym, "held": sym in USER_HELD, "industry": _industry(sym),
+                "value": None, "currency": "USD", "r1w": 0.0, "r1m": 0.0, "r3m": 0.0,
+                "score": -999, "accel": 0.0, "series": [], "no_data": True}
+    r1w = _ret(closes, _MOM_BACK["r1w"])
+    r1m = _ret(closes, _MOM_BACK["r1m"])
+    r3m = _ret(closes, _MOM_BACK["r3m"])
+    mom = _momentum(r1w, r1m, r3m)
+    spark = closes[-63:] if len(closes) >= 63 else closes
+    if len(spark) > 40:
+        spark = spark[:: (len(spark) // 40) or 1]
+    price = (meta or {}).get("regularMarketPrice") or closes[-1]
+    return {"code": sym, "held": sym in USER_HELD, "industry": _industry(sym),
+            "value": round(float(price), 2), "currency": (meta or {}).get("currency", "USD"),
+            "r1w": r1w, "r1m": r1m, "r3m": r3m,
+            "score": mom["score"], "accel": mom["accel"],
+            "series": [round(c, 4) for c in spark]}
+
+
+async def get_watch_groups_momentum() -> dict:
+    """관심그룹별 모멘텀(구성종목 동일가중 평균) + 구성종목 모멘텀. 점수 내림차순."""
+    global _wgroups_cache
+    if _wgroups_cache and time.time() - _wgroups_cache["_ts"] < WGROUPS_TTL:
+        return _wgroups_cache["data"]
+
+    uniq = list(dict.fromkeys(s for syms in WATCH_GROUPS.values() for s in syms))
+    sem = asyncio.Semaphore(8)
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        async def _one(s):
+            async with sem:
+                return await _fetch_chart(client, s, "1d", "6mo")
+        fetched = await asyncio.gather(*[_one(s) for s in uniq])
+    mmap = {sym: _member_momentum(sym, meta, pts) for sym, (meta, pts) in zip(uniq, fetched)}
+
+    groups = []
+    for name, syms in WATCH_GROUPS.items():
+        members = [dict(mmap[s]) for s in syms]
+        members.sort(key=lambda m: m["score"], reverse=True)
+        for i, m in enumerate(members):
+            m["rank"] = i + 1
+        valid = [m for m in members if not m.get("no_data")]
+        if valid:
+            r1w = round(sum(m["r1w"] for m in valid) / len(valid), 2)
+            r1m = round(sum(m["r1m"] for m in valid) / len(valid), 2)
+            r3m = round(sum(m["r3m"] for m in valid) / len(valid), 2)
+            mom = _momentum(r1w, r1m, r3m)
+            score, accel = mom["score"], mom["accel"]
+        else:
+            r1w = r1m = r3m = 0.0
+            score, accel = -999, 0.0
+        groups.append({
+            "name": name, "count": len(valid), "total": len(members),
+            "held": any(m["held"] for m in valid),
+            "r1w": r1w, "r1m": r1m, "r3m": r3m, "score": score, "accel": accel,
+            "members": members,
+        })
+    groups.sort(key=lambda g: g["score"], reverse=True)
+
+    data = {
+        "groups": groups,
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
+        "source": "Yahoo Finance · 약 15분 지연",
+    }
+    _wgroups_cache = {"_ts": time.time(), "data": data}
     return data
 
 

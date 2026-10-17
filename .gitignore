@@ -17,6 +17,7 @@ backend/.candles.db-shm
 backend/.ledger.db
 backend/.ledger.db-wal
 backend/.ledger.db-shm
+backend/.sector_config.json
 
 # ── IDE ──
 .vscode/
