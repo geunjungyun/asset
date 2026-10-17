@@ -1346,7 +1346,7 @@ header {
 .tbl-chips { flex-wrap: wrap; max-width: 560px; }
 .tbl-chips button { padding: 2px 7px; font-size: 0.68rem; }
 .tbl-chips .hm-sig-lbl { font-size: 0.7rem; color: var(--text-muted); padding: 0 4px; align-self: center; }
-.tbl-board-wrap { overflow-x: auto; }
+.tbl-board-wrap { overflow: auto; max-height: calc(100vh - 170px); }
 .tbl-board { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
 .tbl-board th {
     text-align: left; font-weight: 500; color: var(--text-muted); font-size: 0.66rem;
