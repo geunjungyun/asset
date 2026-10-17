@@ -283,8 +283,16 @@
                     </h2>
                     <div class="section-actions">
                         <div class="period-toggle view-toggle" id="sector-view-toggle">
-                            <button data-sview="momentum" class="active">모멘텀</button>
+                            <button data-sview="heatmap" class="active">히트맵</button>
+                            <button data-sview="momentum">표</button>
                             <button data-sview="chart">그래프</button>
+                        </div>
+                        <div class="period-toggle" id="hm-signal-toggle">
+                            <span class="hm-sig-lbl">색</span>
+                            <button data-sig="rs" class="active">상대강도</button>
+                            <button data-sig="r1m">수익률</button>
+                            <button data-sig="accel">가속</button>
+                            <button data-sig="drank">Δ순위</button>
                         </div>
                         <div class="period-toggle" id="sector-period-toggle" hidden>
                             <button data-period="1D">1일</button>
@@ -300,8 +308,14 @@
                     </div>
                 </div>
 
+                <!-- 히트맵 (대분류▸중분류▸종목 한눈에) -->
+                <div class="sector-heatmap" id="sector-heatmap">
+                    <div class="loading-row">히트맵을 불러오는 중...</div>
+                </div>
+                <div class="hm-detail" id="hm-detail" hidden></div>
+
                 <!-- 모멘텀 보드 (갈아타기 판단: 1주·1개월·3개월 + 가속) -->
-                <div class="sector-momentum" id="sector-momentum">
+                <div class="sector-momentum" id="sector-momentum" hidden>
                     <div class="loading-row">모멘텀을 불러오는 중...</div>
                 </div>
 

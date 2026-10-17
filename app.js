@@ -685,7 +685,9 @@ let currentView = 'dashboard';  // 좌측 메뉴 보기: 'dashboard' | 'sector'
 let sectorPeriod = '1W';        // 섹터 추이 페이지 기간(기본 1주)
 let sectorData = null;          // /api/sectors 결과 (섹터 ETF 11개)
 let sectorLoaded = false;
-let sectorMode = 'momentum';    // 섹터 추이 보기: 'momentum' | 'chart'
+let sectorMode = 'heatmap';     // 섹터 추이 보기: 'heatmap' | 'momentum' | 'chart'
+let boardData = null;           // /api/sectors/board 캐시
+let hmSignal = 'rs';            // 히트맵 색 기준: rs | r1m | accel | drank
 const expandedSectors = new Set();  // (그래프) 펼쳐진 섹터 key
 const memberCache = {};             // 'key|period' -> members[]
 const expandedMom = new Set();      // (모멘텀) 펼쳐진 섹터 key
@@ -1064,14 +1066,138 @@ async function loadSectors(force) {
 
 // 보기(모멘텀/그래프)에 맞게 렌더
 function renderSectorView() {
+    const heat = document.getElementById('sector-heatmap');
+    const hmSig = document.getElementById('hm-signal-toggle');
     const mom = document.getElementById('sector-momentum');
     const grid = document.getElementById('sector-grid');
     const pt = document.getElementById('sector-period-toggle');
+    const isHeat = sectorMode === 'heatmap';
     const isMom = sectorMode === 'momentum';
+    const isChart = sectorMode === 'chart';
+    if (heat) heat.hidden = !isHeat;
+    if (hmSig) hmSig.hidden = !isHeat;
+    const det = document.getElementById('hm-detail');
+    if (det && !isHeat) det.hidden = true;
     if (mom) mom.hidden = !isMom;
-    if (grid) grid.hidden = isMom;
-    if (pt) pt.hidden = isMom;  // 기간 토글은 그래프 보기에서만
-    if (isMom) renderSectorMomentum(); else renderSectorCharts();
+    if (grid) grid.hidden = !isChart;
+    if (pt) pt.hidden = !isChart;  // 기간 토글은 그래프 보기에서만
+    if (isHeat) loadBoard();
+    else if (isMom) renderSectorMomentum();
+    else renderSectorCharts();
+}
+
+// ── 히트맵 (대분류▸중분류▸종목 한눈에) ──────────────────────────────────── //
+async function loadBoard(force) {
+    const box = document.getElementById('sector-heatmap');
+    if (boardData && !force) { renderHeatmap(); return; }
+    if (box) box.innerHTML = '<div class="loading-row">히트맵을 불러오는 중...</div>';
+    try {
+        boardData = await fetchJSON('/api/sectors/board');
+        renderHeatmap();
+    } catch (e) {
+        if (box) box.innerHTML = '<div class="loading-row">보드를 불러올 수 없습니다.</div>';
+    }
+}
+
+function _hmVal(o) {
+    if (!o) return 0;
+    if (hmSignal === 'rs') return Number(o.rs) || 0;
+    if (hmSignal === 'r1m') return Number(o.r1m) || 0;
+    if (hmSignal === 'accel') return Number(o.accel) || 0;
+    if (hmSignal === 'drank') return Number(o.drank) || 0;
+    return 0;
+}
+const _HM_MAX = { rs: 6, r1m: 15, accel: 3, drank: 5 };
+function _hmColor(v) {
+    const max = _HM_MAX[hmSignal] || 6;
+    let t = Math.max(-1, Math.min(1, (Number(v) || 0) / max));
+    // 다이버징: 음=빨강 / 0=중립(어두움) / 양=초록
+    const neu = [42, 47, 58];              // #2a2f3a
+    const pos = [29, 158, 117];            // #1d9e75
+    const neg = [226, 75, 74];             // #e24b4a
+    const to = t >= 0 ? pos : neg;
+    const a = Math.abs(t);
+    const c = neu.map((n, i) => Math.round(n + (to[i] - n) * a));
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function _hmText(v) {
+    const max = _HM_MAX[hmSignal] || 6;
+    return Math.abs((Number(v) || 0) / max) > 0.4 ? '#fff' : 'var(--text-muted)';
+}
+function _hmValTxt(o) {
+    if (hmSignal === 'drank') {
+        const d = Number(o.drank) || 0;
+        return d > 0 ? '▲' + d : (d < 0 ? '▼' + (-d) : '–');
+    }
+    const v = _hmVal(o);
+    return (v >= 0 ? '+' : '') + v.toFixed(1);
+}
+function _drankBadge(d) {
+    d = Number(d) || 0;
+    if (d > 0) return `<span class="hm-dr up">▲${d}</span>`;
+    if (d < 0) return `<span class="hm-dr dn">▼${-d}</span>`;
+    return '';
+}
+
+function renderHeatmap() {
+    const box = document.getElementById('sector-heatmap');
+    if (!box || !boardData) return;
+    const sectors = [...(boardData.sectors || [])].sort((a, b) => (a.rank || 99) - (b.rank || 99));
+    box.innerHTML = sectors.map(s => {
+        const sig = s.sig || {};
+        const bar = _hmColor(_hmVal(sig));
+        const inds = (s.industries || []).map(ind => {
+            const tiles = (ind.stocks || []).map(t => {
+                if (t.no_data) return `<div class="hm-tile nd">${t.code}</div>`;
+                const mk = (t.held ? '●' : '') + (t.state === '과열' ? '🔥' : '');
+                return `<div class="hm-tile" style="background:${_hmColor(_hmVal(t))};color:${_hmText(_hmVal(t))}" data-code="${t.code}" data-key="${s.key}">
+                    <span class="hm-tk">${t.code}</span><span class="hm-v">${_hmValTxt(t)}</span>${mk ? `<span class="hm-mk">${mk}</span>` : ''}</div>`;
+            }).join('');
+            return `<div class="hm-ind"><span class="hm-ind-l">${ind.name}</span><div class="hm-tiles">${tiles}</div></div>`;
+        }).join('');
+        const rsTxt = sig.rs != null ? `시장대비 ${sig.rs >= 0 ? '+' : ''}${Number(sig.rs).toFixed(1)}` : '';
+        return `<div class="hm-sec">
+            <div class="hm-sec-h" style="border-left:3px solid ${bar}">
+                <span class="hm-sec-name">${s.name}</span>
+                <span class="hm-sec-meta">#${s.rank || '-'} ${_drankBadge(s.drank)} <span class="${(sig.rs || 0) >= 0 ? 'pos' : 'neg'}">${rsTxt}</span></span>
+            </div>${inds}</div>`;
+    }).join('');
+    const su = document.getElementById('sector-updated');
+    if (su) su.textContent = '기준: ' + (boardData.updated_at || '') + ' · ' + (boardData.source || '');
+}
+
+function _findStock(code, key) {
+    const s = (boardData.sectors || []).find(x => x.key === key);
+    if (!s) return null;
+    for (const ind of s.industries) {
+        const t = ind.stocks.find(x => x.code === code);
+        if (t) return { t, ind: ind.name, sec: s.name };
+    }
+    return null;
+}
+function showHmDetail(code, key) {
+    const det = document.getElementById('hm-detail');
+    const f = _findStock(code, key);
+    if (!det || !f || f.t.no_data) { if (det) det.hidden = true; return; }
+    const t = f.t;
+    const per = t.periods || {};
+    const strip = (boardData.strip_periods || []).map(p => {
+        const v = Number(per[p]) || 0;
+        return `<span class="hm-strip-c" style="background:${_stripColor(v)}" title="${p} ${v >= 0 ? '+' : ''}${v.toFixed(1)}%">${p}</span>`;
+    }).join('');
+    const pc = (v) => `<span class="${(v || 0) >= 0 ? 'pos' : 'neg'}">${(v || 0) >= 0 ? '+' : ''}${(Number(v) || 0).toFixed(2)}%</span>`;
+    det.hidden = false;
+    det.innerHTML = `
+        <div class="hm-d-head"><b>${t.held ? '● ' : ''}${code}</b> <span class="hm-d-sub">${f.sec} · ${f.ind} · $${t.price ?? '-'} · 상태 ${t.state || '-'}${t.rsi != null ? ` (RSI ${t.rsi})` : ''}</span></div>
+        <div class="hm-d-row">1주 ${pc(t.r1w)} · 1개월 ${pc(t.r1m)} · 3개월 ${pc(t.r3m)} · 가속 ${(t.accel >= 0 ? '+' : '') + (t.accel ?? 0)} · 시장대비 <span class="${(t.rs || 0) >= 0 ? 'pos' : 'neg'}">${(t.rs >= 0 ? '+' : '') + (t.rs ?? 0)}</span> · 섹터내 #${t.rank || '-'} ${_drankBadge(t.drank)}</div>
+        <div class="hm-d-strip">${strip}</div>`;
+}
+function _stripColor(v) {
+    let t = Math.max(-1, Math.min(1, (Number(v) || 0) / 12));
+    const neu = [42, 47, 58], pos = [29, 158, 117], neg = [226, 75, 74];
+    const to = t >= 0 ? pos : neg, a = Math.abs(t);
+    const c = neu.map((n, i) => Math.round(n + (to[i] - n) * a));
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
 // 섹터 모멘텀 랭킹 보드 (갈아타기 판단)
@@ -1536,6 +1662,23 @@ function initSectorPeriodToggle() {
         btn.classList.add('active');
         sectorMode = btn.dataset.sview;
         renderSectorView();
+    });
+
+    // 히트맵 색 기준 토글
+    const hst = document.getElementById('hm-signal-toggle');
+    if (hst) hst.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-sig]');
+        if (!btn) return;
+        hst.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        hmSignal = btn.dataset.sig;
+        renderHeatmap();
+    });
+    // 히트맵 타일 호버 → 하단 상세
+    const heatBox = document.getElementById('sector-heatmap');
+    if (heatBox) heatBox.addEventListener('mouseover', (e) => {
+        const tile = e.target.closest('.hm-tile[data-code]');
+        if (tile) showHmDetail(tile.dataset.code, tile.dataset.key);
     });
 
     // 모멘텀 섹터 행 펼치기/접기 (이벤트 위임)
