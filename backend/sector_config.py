@@ -100,6 +100,15 @@ def save_config(cfg: dict) -> dict:
     return cfg
 
 
+def reset_config() -> dict:
+    """구성을 코드 기본값(TAXONOMY)으로 재시드(파일 덮어씀)."""
+    with _lock:
+        global _cache
+        _cache = _seed()
+        _write(_cache)
+    return _cache
+
+
 def sectors() -> list[tuple]:
     """[(key, name, etf)] — 고정 대분류."""
     return [(s.get("key"), s.get("name"), s.get("etf", "")) for s in _load()["sectors"]]

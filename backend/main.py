@@ -245,6 +245,12 @@ async def sectors_config_put(cfg: dict) -> JSONResponse:
     return JSONResponse(saved)
 
 
+@app.post("/api/sectors/config/reset")
+async def sectors_config_reset() -> dict:
+    """구성을 코드 기본값(Finviz TAXONOMY)으로 재시드."""
+    return await asyncio.to_thread(sector_config.reset_config)
+
+
 @app.get("/api/sectors/board")
 async def sectors_board() -> dict:
     """섹터▸산업▸종목 + 신호(다기간 수익률·상대강도·Δ순위·상태). 히트맵/표용."""

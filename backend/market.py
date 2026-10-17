@@ -56,20 +56,114 @@ SECTOR_ETFS = [
     ("xlu",  "유틸리티",     "섹터", "$", "XLU"),
 ]
 
-# 섹터별 대표(시총 상위) 구성 종목 — 드릴다운용. (Yahoo 티커)
-SECTOR_MEMBERS = {
-    "xlk":  ["NVDA", "MSFT", "AAPL", "AVGO", "ORCL", "CRM", "AMD", "MU", "MRVL"],
-    "xlc":  ["GOOGL", "META", "NFLX", "DIS", "TMUS", "T", "VZ", "CMCSA"],
-    "xlv":  ["LLY", "JNJ", "ABBV", "MRK", "UNH", "ABT", "AMGN", "TMO"],
-    "xlf":  ["JPM", "BRK-B", "V", "MA", "BAC", "WFC", "GS", "MS"],
-    "xly":  ["AMZN", "TSLA", "HD", "MCD", "BKNG", "LOW", "NKE", "SBUX"],
-    "xlp":  ["WMT", "COST", "PG", "KO", "PEP", "PM", "MO", "MDLZ"],
-    "xle":  ["XOM", "CVX", "COP", "WMB", "EOG", "SLB", "OKE", "PSX"],
-    "xli":  ["GE", "RTX", "CAT", "UBER", "BA", "HON", "UNP", "DE"],
-    "xlb":  ["LIN", "SHW", "APD", "ECL", "FCX", "NEM", "DOW", "NUE"],
-    "xlre": ["PLD", "AMT", "EQIX", "WELL", "SPG", "O", "DLR", "CCI"],
-    "xlu":  ["NEE", "SO", "DUK", "CEG", "AEP", "D", "EXC", "SRE"],
+# 섹터 ▸ 산업(Finviz 기준) ▸ 대표 종목. 편집 가능 구성의 기본 시드(SECTOR_MEMBERS/INDUSTRY는 여기서 파생).
+TAXONOMY = {
+    "xlk": [
+        ("반도체", ["NVDA", "AVGO", "AMD", "TXN", "QCOM", "MU", "INTC", "ADI", "MRVL", "MCHP", "NXPI", "MPWR", "ON", "SWKS"]),
+        ("소프트웨어-인프라", ["MSFT", "ORCL", "PLTR", "CRWD", "PANW", "FTNT", "SNPS", "CDNS", "VRSN", "FFIV"]),
+        ("소프트웨어-응용", ["CRM", "NOW", "INTU", "ADBE", "UBER", "ADP", "WDAY", "DDOG", "ROP"]),
+        ("IT서비스", ["IBM", "ACN", "FI", "FIS", "GPN", "CTSH"]),
+        ("컴퓨터 하드웨어", ["DELL", "HPQ", "WDC", "STX", "ANET", "SNDK", "NTAP"]),
+        ("통신장비", ["CSCO", "MSI", "HPE", "CIEN"]),
+        ("반도체장비", ["AMAT", "LRCX", "KLAC", "TER", "QRVO"]),
+        ("전자부품", ["APH", "GLW", "TEL"]),
+        ("과학기술기기", ["KEYS", "TDY", "GRMN", "COHR", "FTV", "TRMB"]),
+        ("소비자가전", ["AAPL"]),
+    ],
+    "xlc": [
+        ("인터넷 컨텐츠", ["GOOGL", "META"]),
+        ("통신서비스", ["TMUS", "VZ", "T", "CMCSA"]),
+        ("엔터테인먼트", ["NFLX", "DIS", "WBD", "LYV", "FOXA"]),
+        ("전자게임", ["EA", "TTWO"]),
+        ("광고·마케팅", ["APP", "OMC", "IPG"]),
+    ],
+    "xlv": [
+        ("제약-일반", ["LLY", "JNJ", "ABBV", "MRK", "PFE", "BMY", "GILD"]),
+        ("바이오테크", ["AMGN", "VRTX", "REGN", "BIIB", "INCY"]),
+        ("의료기기", ["ABT", "SYK", "BSX", "MDT", "ISRG", "EW", "DXCM", "BDX", "ZBH", "STE"]),
+        ("진단·연구", ["TMO", "DHR", "A", "IQV", "DGX", "LH", "RVTY", "WAT"]),
+        ("헬스케어플랜", ["UNH", "ELV", "CI", "CVS", "HUM", "CNC"]),
+        ("의료유통", ["MCK", "COR", "CAH"]),
+        ("의료서비스", ["HCA", "DVA", "UHS"]),
+    ],
+    "xlf": [
+        ("은행-다각화", ["JPM", "BAC", "WFC", "C"]),
+        ("자본시장", ["MS", "GS", "SCHW", "BX", "BLK", "KKR", "APO", "BK", "STT", "TROW", "AMP", "NTRS", "RJF", "IBKR"]),
+        ("신용서비스", ["V", "MA", "AXP", "COF", "DFS", "SYF", "PYPL"]),
+        ("보험-다각화", ["BRK-B", "CB", "TRV", "ALL", "PGR", "AIG"]),
+        ("금융데이터", ["SPGI", "ICE", "CME", "MCO", "MSCI", "NDAQ", "FDS"]),
+        ("은행-지역", ["USB", "PNC", "TFC", "MTB", "FITB", "HBAN", "RF", "KEY", "CFG"]),
+        ("보험-생명", ["MET", "PRU", "AFL"]),
+    ],
+    "xly": [
+        ("인터넷소매", ["AMZN"]),
+        ("자동차제조", ["TSLA", "GM", "F", "RIVN"]),
+        ("음식점", ["MCD", "SBUX", "CMG", "YUM", "DRI", "DPZ"]),
+        ("여행서비스", ["BKNG", "ABNB", "EXPE", "RCL", "CCL", "NCLH"]),
+        ("주택개선소매", ["HD", "LOW"]),
+        ("의류소매", ["TJX", "ROST"]),
+        ("자동차부품", ["ORLY", "AZO", "APTV", "GPC"]),
+        ("숙박", ["MAR", "HLT", "H"]),
+        ("신발·의류", ["NKE", "DECK", "LULU"]),
+        ("전문소매", ["BBY", "ULTA"]),
+        ("도박·리조트", ["LVS", "DKNG", "CZR"]),
+    ],
+    "xlp": [
+        ("할인점", ["WMT", "COST", "TGT", "DG", "DLTR"]),
+        ("가정·개인용품", ["PG", "CL", "KMB", "CHD", "CLX", "EL", "KVUE"]),
+        ("담배", ["PM", "MO", "BTI"]),
+        ("음료-비알콜", ["KO", "PEP", "MNST", "KDP"]),
+        ("음료-주류", ["STZ"]),
+        ("포장식품", ["MDLZ", "GIS", "K", "KHC", "HSY", "HRL", "CAG", "SJM"]),
+        ("식품유통", ["SYY", "KR"]),
+        ("농산물", ["ADM", "BG"]),
+    ],
+    "xli": [
+        ("항공우주·방산", ["GE", "RTX", "BA", "LMT", "GD", "NOC", "HWM", "LHX", "AXON", "TDG", "GEV"]),
+        ("특수산업기계", ["ETN", "PH", "EMR", "ITW", "CMI", "ROK", "IR", "DOV", "AME", "OTIS"]),
+        ("농기계·중장비", ["CAT", "DE", "PCAR"]),
+        ("철도", ["UNP", "CSX", "NSC"]),
+        ("통합물류", ["UPS", "FDX"]),
+        ("건물자재·설비", ["TT", "JCI", "CARR", "FAST"]),
+        ("엔지니어링·건설", ["PWR", "FIX", "J"]),
+        ("항공사", ["DAL", "UAL", "LUV", "AAL"]),
+        ("전기장비", ["VRT", "BE", "ENPH"]),
+        ("폐기물관리", ["WM", "RSG"]),
+        ("복합기업", ["MMM", "HON"]),
+        ("전문서비스", ["CTAS", "FERG", "URI", "VRSK", "PAYX"]),
+    ],
+    "xlu": [
+        ("전력(규제)", ["NEE", "SO", "DUK", "AEP", "D", "EXC", "XEL", "ED", "PEG", "ETR", "WEC", "ES", "PPL", "CNP", "EIX", "LNT", "FE", "AEE", "DTE", "CMS"]),
+        ("복합·독립발전", ["CEG", "VST", "NRG"]),
+        ("가스·복합", ["SRE", "ATO"]),
+        ("수도", ["AWK"]),
+    ],
+    "xlre": [
+        ("통신·데이터리츠", ["AMT", "EQIX", "DLR", "CCI", "SBAC"]),
+        ("산업리츠", ["PLD"]),
+        ("리테일리츠", ["SPG", "O", "REG", "KIM"]),
+        ("주거리츠", ["WELL", "AVB", "EQR", "INVH", "VICI"]),
+        ("오피스·기타리츠", ["PSA", "EXR", "CBRE", "CSGP", "ARE", "VTR"]),
+    ],
+    "xle": [
+        ("석유·가스 통합", ["XOM", "CVX"]),
+        ("E&P(탐사·생산)", ["COP", "EOG", "OXY", "DVN", "FANG", "HES", "EQT", "CTRA"]),
+        ("미드스트림", ["WMB", "KMI", "OKE", "TRGP", "LNG", "TPL"]),
+        ("정제·마케팅", ["MPC", "PSX", "VLO"]),
+        ("장비·서비스", ["SLB", "HAL", "BKR"]),
+    ],
+    "xlb": [
+        ("특수화학", ["LIN", "SHW", "APD", "ECL", "IFF", "ALB", "DD", "DOW", "LYB"]),
+        ("철강", ["NUE", "STLD"]),
+        ("금속·광업", ["FCX", "NEM"]),
+        ("건축자재", ["VMC", "MLM"]),
+        ("포장", ["AMCR", "PKG", "IP", "BALL"]),
+        ("농업투입", ["CF", "MOS", "CTVA"]),
+    ],
 }
+
+# 파생: 섹터→종목(산업 순서대로), 종목→산업
+SECTOR_MEMBERS = {k: [t for _ind, ts in v for t in ts] for k, v in TAXONOMY.items()}
 
 # 사용자 관심그룹(앱의 관심 목록 기반). 그룹명 → Yahoo 티커 목록.
 # GICS 섹터와 별개로, 섹터 추이에서 '관심그룹' 모멘텀으로 조회.
@@ -87,47 +181,8 @@ WATCH_GROUPS: dict[str, list[str]] = {
 # 사용자 보유 종목(섹터 드릴다운에서 강조 표시)
 USER_HELD = {"MU", "SNDK", "GOOGL", "MRVL", "AMD", "AMGN", "LLY", "NVDA"}
 
-# 종목 → 주요 하위 산업(Industry) 분류
-INDUSTRY = {
-    # 기술
-    "NVDA": "반도체", "AVGO": "반도체", "AMD": "반도체", "MU": "반도체", "MRVL": "반도체",
-    "MSFT": "소프트웨어", "ORCL": "소프트웨어", "CRM": "소프트웨어",
-    "AAPL": "하드웨어·전자",
-    # 커뮤니케이션
-    "GOOGL": "인터넷·미디어", "META": "인터넷·미디어", "NFLX": "인터넷·미디어", "DIS": "인터넷·미디어",
-    "TMUS": "통신서비스", "T": "통신서비스", "VZ": "통신서비스", "CMCSA": "통신서비스",
-    # 헬스케어
-    "LLY": "제약", "ABBV": "제약", "MRK": "제약",
-    "AMGN": "바이오테크",
-    "JNJ": "의료기기·서비스", "UNH": "의료기기·서비스", "ABT": "의료기기·서비스", "TMO": "의료기기·서비스",
-    # 금융
-    "JPM": "은행", "BAC": "은행", "WFC": "은행",
-    "V": "카드·결제", "MA": "카드·결제",
-    "GS": "자본시장·보험", "MS": "자본시장·보험", "BRK-B": "자본시장·보험",
-    # 경기소비재
-    "AMZN": "인터넷소매", "TSLA": "자동차",
-    "HD": "소매·외식·여행", "MCD": "소매·외식·여행", "LOW": "소매·외식·여행",
-    "BKNG": "소매·외식·여행", "SBUX": "소매·외식·여행", "NKE": "소매·외식·여행",
-    # 필수소비재
-    "WMT": "유통", "COST": "유통",
-    "KO": "음식료·담배", "PEP": "음식료·담배", "MO": "음식료·담배", "MDLZ": "음식료·담배",
-    "PG": "생활용품",
-    # 에너지
-    "XOM": "종합·E&P", "CVX": "종합·E&P", "COP": "종합·E&P", "EOG": "종합·E&P",
-    "SLB": "서비스·중류", "WMB": "서비스·중류", "OKE": "서비스·중류", "PSX": "서비스·중류",
-    # 산업재
-    "GE": "자본재", "RTX": "자본재", "CAT": "자본재", "BA": "자본재", "HON": "자본재", "DE": "자본재",
-    "UBER": "운송", "UNP": "운송",
-    # 소재
-    "LIN": "화학", "SHW": "화학", "APD": "화학", "ECL": "화학", "DOW": "화학",
-    "FCX": "금속·광업", "NEM": "금속·광업", "NUE": "금속·광업",
-    # 부동산
-    "AMT": "인프라리츠", "CCI": "인프라리츠", "EQIX": "데이터센터리츠", "DLR": "데이터센터리츠",
-    "PLD": "물류리츠", "SPG": "기타리츠", "O": "기타리츠", "WELL": "기타리츠",
-    # 유틸리티
-    "NEE": "전력", "SO": "전력", "DUK": "전력", "AEP": "전력", "D": "전력", "EXC": "전력",
-    "CEG": "신재생·복합", "SRE": "신재생·복합",
-}
+# 종목 → 하위 산업(Industry) — TAXONOMY에서 파생
+INDUSTRY = {t: ind for v in TAXONOMY.values() for ind, ts in v for t in ts}
 
 
 def _industry(sym: str) -> str:
@@ -528,7 +583,7 @@ PERIOD_DAYS = {
 STRIP_PERIODS = ["1D", "1W", "2W", "1M", "3M", "6M", "1Y"]  # 프로파일 스트립 순서
 
 _board_cache: dict | None = None
-BOARD_TTL = 90  # 초 (약 100종목 조회라 비쌈)
+BOARD_TTL = 300  # 초 (수백 종목 조회라 비쌈 → 5분 캐시)
 
 
 def _rsi(closes: list[float], n: int = 14) -> float | None:
@@ -594,7 +649,7 @@ async def get_sector_board() -> dict:
     uniq_stocks = list(dict.fromkeys(stocks))
     allsyms = list(dict.fromkeys(["SPY", *etfs, *uniq_stocks]))
 
-    sem = asyncio.Semaphore(12)
+    sem = asyncio.Semaphore(16)
 
     async def _one(client, sym):
         async with sem:
