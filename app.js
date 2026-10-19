@@ -1188,7 +1188,7 @@ function showHmDetail(code, key) {
     const pc = (v) => `<span class="${(v || 0) >= 0 ? 'pos' : 'neg'}">${(v || 0) >= 0 ? '+' : ''}${(Number(v) || 0).toFixed(2)}%</span>`;
     det.hidden = false;
     det.innerHTML = `
-        <div class="hm-d-head"><b>${t.held ? '● ' : ''}${code}</b> <span class="hm-d-sub">${f.sec} · ${f.ind} · $${t.price ?? '-'} · 상태 ${t.state || '-'}${t.rsi != null ? ` (RSI ${t.rsi})` : ''}</span></div>
+        <div class="hm-d-head"><b>${t.held ? '● ' : ''}${code}</b> <span class="hm-d-name">${t.name || ''}</span> <span class="hm-d-sub">${f.sec} · ${f.ind} · $${t.price ?? '-'} · 상태 ${t.state || '-'}${t.rsi != null ? ` (RSI ${t.rsi})` : ''}</span></div>
         <div class="hm-d-row">1주 ${pc(t.r1w)} · 1개월 ${pc(t.r1m)} · 3개월 ${pc(t.r3m)} · 가속 ${(t.accel >= 0 ? '+' : '') + (t.accel ?? 0)} · 시장대비 <span class="${(t.rs || 0) >= 0 ? 'pos' : 'neg'}">${(t.rs >= 0 ? '+' : '') + (t.rs ?? 0)}</span> · 섹터내 #${t.rank || '-'} ${_drankBadge(t.drank)}</div>
         <div class="hm-d-strip">${strip}</div>`;
 }
@@ -1253,7 +1253,8 @@ function renderSectorTable() {
                         + `<td colspan="${span - 1}" class="mom-nodata">데이터 없음</td></tr>`;
                     continue;
                 }
-                body += `<tr class="tbl-stk"><td class="stk-name">${t.held ? '● ' : ''}${t.code}</td>`
+                body += `<tr class="tbl-stk"><td class="stk-name">${t.held ? '● ' : ''}${t.code}`
+                    + (t.name ? ` <span class="stk-en">${t.name}</span>` : '') + `</td>`
                     + cols.map(p => _tpc((t.periods || {})[p])).join('')
                     + `<td class="num">${(t.accel >= 0 ? '+' : '') + (t.accel ?? 0)}</td>`
                     + _rsCell(t.rs)

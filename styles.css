@@ -1369,6 +1369,8 @@ header {
 .st-badge.hc-r { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
 .st-badge.hc-n { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
 .hm-strip-c.sm { padding: 0; width: 13px; height: 11px; display: inline-block; border-radius: 2px; }
+.stk-en { color: var(--text-muted); font-size: 0.68rem; font-weight: 400; margin-left: 4px; }
+.hm-d-name { color: var(--text-secondary); font-size: 0.78rem; }
 
 /* ── 포트폴리오 손익 ─────────────────────────────────────────────────── */
 .pnl-page { max-width: 1100px; }

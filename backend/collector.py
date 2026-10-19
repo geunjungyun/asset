@@ -96,7 +96,10 @@ def sector_symbols() -> list[str]:
 
 async def _collect_yahoo_daily(client, sym: str, rng: str) -> int:
     try:
-        _meta, pts = await market._fetch_chart(client, sym, "1d", rng)
+        meta, pts = await market._fetch_chart(client, sym, "1d", rng)
+        name = (meta or {}).get("longName") or (meta or {}).get("shortName")
+        if name:
+            store.set_name(sym, name)
         bars = [(ts, None, None, None, c, None) for ts, c in (pts or []) if c is not None]
         return store.upsert_candles(sym, "1d", bars)
     except Exception:  # noqa: BLE001

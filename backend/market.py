@@ -652,6 +652,7 @@ async def get_sector_board() -> dict:
 
     # 로컬 일봉 저장소에서 읽음(수집기가 백그라운드로 채움) — 네트워크/레이트리밋 없음, 즉시
     series_map = await asyncio.to_thread(candle_store.closes_bulk, allsyms, "1d")
+    names = await asyncio.to_thread(candle_store.names_bulk, uniq_stocks)
     spy_score = _score_asof(series_map.get("SPY", []))
 
     def _sig(sym: str) -> dict | None:
@@ -683,7 +684,7 @@ async def get_sector_board() -> dict:
             toks = []
             for t in ind.get("tickers", []):
                 g = _sig(t)
-                toks.append({"code": t, "held": t in USER_HELD, **(g or {"no_data": True})})
+                toks.append({"code": t, "name": names.get(t, ""), "held": t in USER_HELD, **(g or {"no_data": True})})
             inds_out.append({"name": ind.get("name", "기타"), "stocks": toks})
         sectors_out.append({"key": s["key"], "name": s["name"], "etf": s.get("etf"),
                             "sig": esig, "industries": inds_out})

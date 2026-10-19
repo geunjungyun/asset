@@ -51,6 +51,7 @@ def init_db() -> None:
             )"""
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_candles_sym_int_ts ON candles(symbol, interval, ts)")
+        c.execute("CREATE TABLE IF NOT EXISTS names(symbol TEXT PRIMARY KEY, name TEXT)")
         c.execute(
             """CREATE TABLE IF NOT EXISTS watch(
                 symbol    TEXT PRIMARY KEY,
@@ -117,6 +118,22 @@ def closes_bulk(symbols: list[str], interval: str = "1d") -> dict[str, list[floa
         if close is not None and sym in out:
             out[sym].append(close)
     return out
+
+
+def set_name(symbol: str, name: str) -> None:
+    if not name:
+        return
+    with _lock, _db() as c:
+        c.execute("INSERT OR REPLACE INTO names(symbol, name) VALUES(?,?)", (symbol, name))
+
+
+def names_bulk(symbols: list[str]) -> dict[str, str]:
+    if not symbols:
+        return {}
+    qmarks = ",".join(["?"] * len(symbols))
+    with _db() as c:
+        rows = c.execute(f"SELECT symbol, name FROM names WHERE symbol IN ({qmarks})", symbols).fetchall()
+    return {s: n for s, n in rows}
 
 
 def has_candles(symbol: str, interval: str, start_ts: int | None = None) -> int:
