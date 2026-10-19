@@ -144,11 +144,17 @@ def _prev_day_change(symbol: str, mkt: str = "overseas") -> tuple[float | None, 
     """
     anchor_date = datetime.fromtimestamp(_recent_session_start(mkt), KST).date()
     closes: list[float] = []
+    seen: set = set()   # 같은 날짜 중복(다중 소스 ts) 제거 → 거래일 단위 2개
     for ts, close, *_ in reversed(store.get_candles(symbol, "1d")):
-        if close and datetime.fromtimestamp(ts, KST).date() < anchor_date:
-            closes.append(close)
-            if len(closes) == 2:
-                break
+        if not close:
+            continue
+        d = datetime.fromtimestamp(ts, KST).date()
+        if d >= anchor_date or d in seen:
+            continue
+        seen.add(d)
+        closes.append(close)
+        if len(closes) == 2:
+            break
     if len(closes) < 2 or not closes[1]:
         return None, None
     prev_close, prev_prev = closes[0], closes[1]

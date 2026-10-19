@@ -52,6 +52,7 @@ def init_db() -> None:
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_candles_sym_int_ts ON candles(symbol, interval, ts)")
         c.execute("CREATE TABLE IF NOT EXISTS names(symbol TEXT PRIMARY KEY, name TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, val TEXT)")
         c.execute(
             """CREATE TABLE IF NOT EXISTS watch(
                 symbol    TEXT PRIMARY KEY,
@@ -118,6 +119,32 @@ def closes_bulk(symbols: list[str], interval: str = "1d") -> dict[str, list[floa
         if close is not None and sym in out:
             out[sym].append(close)
     return out
+
+
+def delete_candles(symbol: str, interval: str) -> None:
+    with _lock, _db() as c:
+        c.execute("DELETE FROM candles WHERE symbol=? AND interval=?", (symbol, interval))
+
+
+def has_dup_dates(symbol: str, interval: str) -> bool:
+    """같은 날짜(KST)에 2개 이상 봉이 있으면 True(다중 소스 오염 감지)."""
+    with _db() as c:
+        rows = c.execute("SELECT ts FROM candles WHERE symbol=? AND interval=?", (symbol, interval)).fetchall()
+    if not rows:
+        return False
+    dates = {(int(t[0]) + 32400) // 86400 for t in rows}  # KST 일 단위 버킷
+    return len(rows) > len(dates)
+
+
+def meta_get(key: str) -> str | None:
+    with _db() as c:
+        row = c.execute("SELECT val FROM meta WHERE key=?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def meta_set(key: str, val: str) -> None:
+    with _lock, _db() as c:
+        c.execute("INSERT OR REPLACE INTO meta(key, val) VALUES(?,?)", (key, val))
 
 
 def set_name(symbol: str, name: str) -> None:

@@ -70,6 +70,9 @@ async def _collect_minutes(sym: str, exch: str, mkt: str) -> None:
 
 async def _collect_daily(sym: str, exch: str, mkt: str) -> None:
     try:
+        # 다중 소스(Yahoo) 오염으로 같은 날 중복이면 "1d"를 비우고 메리츠로 깨끗이 재백필
+        if store.has_dup_dates(sym, "1d"):
+            store.delete_candles(sym, "1d")
         have = store.has_candles(sym, "1d")
         lookback = BACKFILL_DAYS if have < 100 else 40  # 최초면 5년, 이후 최근 40일
         frm = datetime.fromtimestamp(time.time() - lookback * 86400, KST).strftime("%Y%m%d")
@@ -101,7 +104,7 @@ async def _collect_yahoo_daily(client, sym: str, rng: str) -> int:
         if name:
             store.set_name(sym, name)
         bars = [(ts, None, None, None, c, None) for ts, c in (pts or []) if c is not None]
-        return store.upsert_candles(sym, "1d", bars)
+        return store.upsert_candles(sym, "1dv", bars)
     except Exception:  # noqa: BLE001
         return 0
 
@@ -113,7 +116,7 @@ async def _sync_sector_universe() -> int:
 
     async def _one(client, sym):
         async with sem:
-            rng = "1y" if store.has_candles(sym, "1d") < 200 else "1mo"
+            rng = "1y" if store.has_candles(sym, "1dv") < 200 else "1mo"
             n = await _collect_yahoo_daily(client, sym, rng)
             await asyncio.sleep(SECTOR_STEP)
             return n
@@ -127,7 +130,7 @@ async def _sync_sector_universe() -> int:
         frm = (datetime.now(KST) - timedelta(days=400)).strftime("%Y%m%d")
         to = datetime.now(KST).strftime("%Y%m%d")
         for sym in syms:
-            if store.has_candles(sym, "1d") >= 200:
+            if store.has_candles(sym, "1dv") >= 200:
                 continue
             for exch in ("OQ", "NY"):
                 try:
@@ -135,7 +138,7 @@ async def _sync_sector_universe() -> int:
                 except meritz.MeritzError:
                     bars = None
                 if bars:
-                    store.upsert_candles(sym, "1d", bars)
+                    store.upsert_candles(sym, "1dv", bars)
                     break
             await asyncio.sleep(SECTOR_STEP)
     return got

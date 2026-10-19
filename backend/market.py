@@ -651,7 +651,7 @@ async def get_sector_board() -> dict:
     allsyms = list(dict.fromkeys(["SPY", *etfs, *uniq_stocks]))
 
     # 로컬 일봉 저장소에서 읽음(수집기가 백그라운드로 채움) — 네트워크/레이트리밋 없음, 즉시
-    series_map = await asyncio.to_thread(candle_store.closes_bulk, allsyms, "1d")
+    series_map = await asyncio.to_thread(candle_store.closes_bulk, allsyms, "1dv")
     names = await asyncio.to_thread(candle_store.names_bulk, uniq_stocks)
     spy_score = _score_asof(series_map.get("SPY", []))
 
