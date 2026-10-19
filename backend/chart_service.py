@@ -95,7 +95,8 @@ HOUR_MAP = {"1h": 1, "2h": 2, "3h": 3, "4h": 4, "6h": 6, "8h": 8, "10h": 10, "12
 MULTIDAY_DAYS = {"2D": 2, "3D": 3, "4D": 4, "5D": 5}
 
 
-async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_label: str) -> dict | None:
+async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_label: str,
+                          live_price: float | None = None) -> dict | None:
     """장중(분봉) 차트. anchor(시작 epoch)부터 현재까지. 간격 자동 조절."""
     span = int(time.time()) - anchor
     interval_sec = _intraday_interval(span)
@@ -111,7 +112,17 @@ async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_
            if c and (ts - interval_sec) >= anchor]
     if len(pts) < 2:
         return None
-    price = pts[-1][1]
+    # 현재가는 잔고의 공식 현재가(psnt_prc)를 우선 사용한다. 마지막 분봉이 거래 공백으로
+    # 전일종가로 캐리포워드되면 수익율이 0으로 튀는데, 공식 현재가는 그 흔들림이 없다.
+    if live_price and live_price > 0:
+        price = float(live_price)
+        now_ts = int(time.time())
+        if pts[-1][0] is not None and now_ts > pts[-1][0]:
+            pts = pts + [(now_ts, price)]   # 선이 실제 현재가까지 닿도록 꼬리 추가
+        else:
+            pts[-1] = (pts[-1][0], price)
+    else:
+        price = pts[-1][1]
     p = market._period(pts, price, "%H:%M")
     return {
         "mode": "live", "code": symbol, "period": period_label,
@@ -208,19 +219,20 @@ async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict
     }
 
 
-async def holding_chart(symbol: str, exch: str, mkt: str, period: str) -> dict:
+async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
+                        live_price: float | None = None) -> dict:
     is_intraday = period == "1D" or period in HOUR_MAP  # 1h~1D 는 전일종가 기준 등락폭
 
     if meritz_settings.enabled:
         # 1D: 세션 시작 고정(국내 08:00/해외 09:00)
         if period == "1D":
-            res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D")
+            res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D", live_price)
             if res is not None:
                 return _apply_prev_close(res, symbol, mkt)
         # Nh: 최근 N시간 롤링 윈도우
         elif period in HOUR_MAP:
             anchor = int(time.time()) - HOUR_MAP[period] * 3600
-            res = await _chart_intraday(symbol, exch, mkt, anchor, period)
+            res = await _chart_intraday(symbol, exch, mkt, anchor, period, live_price)
             if res is not None:
                 return _apply_prev_close(res, symbol, mkt)
 

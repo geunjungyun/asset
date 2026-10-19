@@ -39,14 +39,16 @@ async def chartable_holdings() -> list[dict]:
         bal = await meritz.get_balance()
         for h in bal.get("holdings", []):
             out.append({"symbol": h["code"], "exch": h.get("exch", ""),
-                        "market": "overseas", "name": h.get("name", "")})
+                        "market": "overseas", "name": h.get("name", ""),
+                        "current_price": h.get("current_price")})
     except meritz.MeritzError:
         pass
     try:
         dom = await meritz.get_domestic_balance()
         for h in dom.get("holdings", []):
             out.append({"symbol": h["code"], "exch": "", "market": "domestic",
-                        "name": h.get("name", "")})
+                        "name": h.get("name", ""),
+                        "current_price": h.get("current_price")})
     except meritz.MeritzError:
         pass
     return out
