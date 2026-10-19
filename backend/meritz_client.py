@@ -79,10 +79,19 @@ def _write_cached_token(access_token: str, expires_in: int) -> None:
         pass
 
 
-async def get_access_token() -> str:
-    cached = _read_cached_token()
-    if cached:
-        return cached
+def _invalidate_token() -> None:
+    """캐시 토큰을 폐기(메리츠가 EGW00121로 거부 → 강제 재발급 유도)."""
+    try:
+        TOKEN_CACHE_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+async def get_access_token(force: bool = False) -> str:
+    if not force:
+        cached = _read_cached_token()
+        if cached:
+            return cached
 
     url = f"{meritz_settings.base_url}/oauth2/token"
     form = {
@@ -137,6 +146,13 @@ async def _get(path: str, params: dict | None = None) -> dict:
         rsp_cd = body.get("rsp_cd")
         msg = body.get("rsp_msg") or body.get("rsp_sub_msg") or body.get("error") or resp.text[:200]
         rate_limited = "EGW00200" in str(rsp_cd) or "EGW00200" in str(body) or resp.status_code == 429
+        # 토큰 무효(EGW00121 등): 캐시 폐기 후 강제 재발급하고 1회 재시도
+        token_bad = "EGW00121" in str(rsp_cd) or "token" in str(msg).lower() or "토큰" in str(msg)
+        if attempt == 0 and token_bad:
+            _invalidate_token()
+            token = await get_access_token(force=True)
+            headers["authorization"] = f"Bearer {token}"
+            continue
         if attempt == 0 and rate_limited:
             await asyncio.sleep(0.4)  # 잠깐 쉬고 1회 재시도
             continue
