@@ -11,8 +11,12 @@ import asyncio
 import time
 from datetime import datetime
 
+import httpx
+
 import candle_store as store
 import meritz_client as meritz
+import market
+import sector_config
 from config import meritz_settings
 from meritz_client import KST
 
@@ -20,6 +24,10 @@ POLL_INTERVAL = 600        # 분봉 수집 주기(초) = 10분
 DAILY_REFRESH = 3600       # 일봉 갱신 주기(초) = 1시간
 BACKFILL_DAYS = 1850       # 최초 일봉 백필(≈5년)
 STEP_SLEEP = 0.25          # 종목 간 호출 간격(TPS 여유)
+
+# 섹터 보드 universe(종목+ETF) 일봉 수집 — Yahoo, 분산(레이트리밋 회피)
+SECTOR_REFRESH = 21600     # 6시간마다 증분 갱신
+SECTOR_STEP = 0.3          # 종목 간 간격
 
 
 async def chartable_holdings() -> list[dict]:
@@ -72,6 +80,61 @@ async def _collect_daily(sym: str, exch: str, mkt: str) -> None:
         store.upsert_candles(sym, "1d", bars)
     except meritz.MeritzError:
         pass
+
+
+def sector_symbols() -> list[str]:
+    """섹터 보드 universe: SPY + 섹터 ETF + 전 구성 종목."""
+    cfg = sector_config.get_config()
+    syms = ["SPY"]
+    for s in cfg.get("sectors", []):
+        if s.get("etf"):
+            syms.append(s["etf"])
+        for ind in s.get("industries", []):
+            syms.extend(ind.get("tickers", []))
+    return list(dict.fromkeys(syms))
+
+
+async def _collect_yahoo_daily(client, sym: str, rng: str) -> int:
+    try:
+        _meta, pts = await market._fetch_chart(client, sym, "1d", rng)
+        bars = [(ts, None, None, None, c, None) for ts, c in (pts or []) if c is not None]
+        return store.upsert_candles(sym, "1d", bars)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+async def _sync_sector_universe() -> int:
+    """universe 일봉을 Yahoo에서 분산 수집(없으면 1년 백필, 있으면 최근 1개월 갱신)."""
+    syms = sector_symbols()
+    sem = asyncio.Semaphore(3)
+
+    async def _one(client, sym):
+        async with sem:
+            rng = "1y" if store.has_candles(sym, "1d") < 200 else "1mo"
+            n = await _collect_yahoo_daily(client, sym, rng)
+            await asyncio.sleep(SECTOR_STEP)
+            return n
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        res = await asyncio.gather(*[_one(client, s) for s in syms])
+    return sum(res)
+
+
+async def run_sector_collector() -> None:
+    """섹터 보드 universe 일봉을 백그라운드로 수집(Yahoo). 메리츠와 무관."""
+    store.init_db()
+    try:
+        await _sync_sector_universe()
+    except Exception:  # noqa: BLE001
+        pass
+    while True:
+        try:
+            await asyncio.sleep(SECTOR_REFRESH)
+            await _sync_sector_universe()
+        except asyncio.CancelledError:
+            break
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def run_collector() -> None:

@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
     candle_store.init_db()    # 캔들 저장소 준비
     ledger_store.init_db()    # 원장(거래내역) 저장소 준비
     tasks = []
+    tasks.append(asyncio.create_task(collector.run_sector_collector()))  # 섹터 보드 일봉(Yahoo)
     if meritz_settings.enabled:
         tasks.append(asyncio.create_task(collector.run_collector()))     # 캔들 누적 수집
         tasks.append(asyncio.create_task(ledger_sync.run_ledger_sync())) # 거래내역 수집

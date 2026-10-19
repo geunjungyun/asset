@@ -102,6 +102,23 @@ def get_candles(symbol: str, interval: str, start_ts: int | None = None,
         return c.execute(q, args).fetchall()
 
 
+def closes_bulk(symbols: list[str], interval: str = "1d") -> dict[str, list[float]]:
+    """여러 종목의 종가 시계열(오름차순)을 한 번에. {symbol: [close,...]}."""
+    out: dict[str, list[float]] = {s: [] for s in symbols}
+    if not symbols:
+        return out
+    qmarks = ",".join(["?"] * len(symbols))
+    with _db() as c:
+        rows = c.execute(
+            f"SELECT symbol, close FROM candles WHERE interval=? AND symbol IN ({qmarks}) ORDER BY symbol, ts ASC",
+            [interval, *symbols],
+        ).fetchall()
+    for sym, close in rows:
+        if close is not None and sym in out:
+            out[sym].append(close)
+    return out
+
+
 def has_candles(symbol: str, interval: str, start_ts: int | None = None) -> int:
     q = "SELECT COUNT(*) FROM candles WHERE symbol=? AND interval=?"
     args: list = [symbol, interval]

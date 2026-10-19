@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 
+import candle_store
 import sector_config
 from config import BASE_DIR
 
@@ -583,7 +584,7 @@ PERIOD_DAYS = {
 STRIP_PERIODS = ["1D", "1W", "2W", "1M", "3M", "6M", "1Y"]  # 프로파일 스트립 순서
 
 _board_cache: dict | None = None
-BOARD_TTL = 300  # 초 (수백 종목 조회라 비쌈 → 5분 캐시)
+BOARD_TTL = 60  # 초 (로컬 DB 읽기라 저렴)
 
 
 def _rsi(closes: list[float], n: int = 14) -> float | None:
@@ -649,35 +650,8 @@ async def get_sector_board() -> dict:
     uniq_stocks = list(dict.fromkeys(stocks))
     allsyms = list(dict.fromkeys(["SPY", *etfs, *uniq_stocks]))
 
-    sem = asyncio.Semaphore(12)
-
-    async def _one(client, sym):
-        async with sem:
-            return sym, await _fetch_chart(client, sym, "1d", "1y")
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        res = await asyncio.gather(*[_one(client, s) for s in allsyms])
-    metas = {sym: meta for sym, (meta, _pts) in res}
-    series_map = {sym: [c for _t, c in (pts or []) if c is not None] for sym, (_meta, pts) in res}
-
-    # 레이트리밋 등으로 빈 응답인 종목 1회 재시도(완만하게)
-    empties = [s for s in allsyms if len(series_map.get(s, [])) < 2]
-    if empties:
-        await asyncio.sleep(1.0)
-        sem2 = asyncio.Semaphore(6)
-
-        async def _retry(client, sym):
-            async with sem2:
-                return sym, await _fetch_chart(client, sym, "1d", "1y")
-
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            res2 = await asyncio.gather(*[_retry(client, s) for s in empties])
-        for sym, (meta, pts) in res2:
-            cl = [c for _t, c in (pts or []) if c is not None]
-            if len(cl) >= 2:
-                series_map[sym] = cl
-                metas[sym] = meta
-
+    # 로컬 일봉 저장소에서 읽음(수집기가 백그라운드로 채움) — 네트워크/레이트리밋 없음, 즉시
+    series_map = await asyncio.to_thread(candle_store.closes_bulk, allsyms, "1d")
     spy_score = _score_asof(series_map.get("SPY", []))
 
     def _sig(sym: str) -> dict | None:
@@ -690,7 +664,6 @@ async def get_sector_board() -> dict:
         spark = cl[-63:]
         if len(spark) > 40:
             spark = spark[:: (len(spark) // 40) or 1]
-        price = (metas.get(sym) or {}).get("regularMarketPrice") or cl[-1]
         return {
             "periods": per, "r1w": per["1W"], "r1m": per["1M"], "r3m": per["3M"],
             "score": mom["score"], "accel": mom["accel"],
@@ -698,7 +671,7 @@ async def get_sector_board() -> dict:
             "state": st["state"], "rsi": st["rsi"],
             "from_high": st["from_high"], "vs_ma200": st["vs_ma200"],
             "_score_1w": _score_asof(cl, 5),
-            "price": round(float(price), 2), "currency": (metas.get(sym) or {}).get("currency", "USD"),
+            "price": round(float(cl[-1]), 2), "currency": "USD",
             "series": [round(c, 4) for c in spark],
         }
 
