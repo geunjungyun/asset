@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -117,7 +117,25 @@ async def _sync_sector_universe() -> int:
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         res = await asyncio.gather(*[_one(client, s) for s in syms])
-    return sum(res)
+    got = sum(res)
+
+    # Yahoo에서 계속 실패하는 종목은 메리츠로 보완(거래소 OQ→NY 순, 소수라 부하 미미)
+    if meritz_settings.enabled:
+        frm = (datetime.now(KST) - timedelta(days=400)).strftime("%Y%m%d")
+        to = datetime.now(KST).strftime("%Y%m%d")
+        for sym in syms:
+            if store.has_candles(sym, "1d") >= 200:
+                continue
+            for exch in ("OQ", "NY"):
+                try:
+                    bars = await meritz.overseas_candles(sym, exch, "days", from_=frm, to=to)
+                except meritz.MeritzError:
+                    bars = None
+                if bars:
+                    store.upsert_candles(sym, "1d", bars)
+                    break
+            await asyncio.sleep(SECTOR_STEP)
+    return got
 
 
 async def run_sector_collector() -> None:
