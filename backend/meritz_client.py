@@ -348,7 +348,7 @@ async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
                 prev = price - _to_float(top.get("prdy_vrss"))
                 return {"price": price, "prev_close": round(prev, 4)}
             return {"price": None, "prev_close": round(price, 4)}  # 장 전: 최신=전일종가
-        else:  # overseas
+        else:  # overseas (미국 등): 주간거래/공백/정규장 시간대를 모두 일관 처리
             params = {"mrkt_div_code": "OV", "mrkt_cls_code": exch, "iscd": symbol,
                       "dely_rltm_cls_code": "0", "mod_stpr_cls_code": "1"}
             body = await _get(OVS_CANDLES_DAYS, params)
@@ -357,11 +357,17 @@ async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
                 return {"price": None, "prev_close": None}
             today = datetime.now(KST).strftime("%Y%m%d")
             top = rows[0]
-            price = _to_float(top.get("prpr"))
-            if (top.get("date") or "") == today:  # 주간거래 종료 후: 오늘 봉 → 공식 전일대비
-                prev = price - _to_float(top.get("prdy_vrss"))
-                return {"price": price, "prev_close": round(prev, 4)}
-            return {"price": None, "prev_close": round(price, 4)}  # 장중: 최신=전일, 현재가는 분봉
+            # ① 오늘 봉 없음(주간거래/프리마켓): 현재가는 분봉, 전일=최신 일봉 종가
+            if (top.get("date") or "") != today:
+                return {"price": None, "prev_close": round(_to_float(top.get("prpr")), 4)}
+            # ②③ 오늘 봉 존재: 실데이터 봉(prdy_vrss!=0)을 찾아 공식 전일대비 사용.
+            #     공백 시간엔 오늘 봉이 전일종가로 되돌아간 플랫 placeholder라 건너뛴다.
+            for r in rows:
+                if _to_float(r.get("prdy_vrss")) != 0:
+                    price = _to_float(r.get("prpr"))
+                    return {"price": price, "prev_close": round(price - _to_float(r.get("prdy_vrss")), 4)}
+            return {"price": _to_float(top.get("prpr")),
+                    "prev_close": round(_to_float(top.get("prpr")), 4)}  # 전부 플랫(변동 0)
     except MeritzError:
         return {"price": None, "prev_close": None}
 
