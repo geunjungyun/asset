@@ -769,8 +769,42 @@ header {
 }
 .hc-card:hover { border-color: rgba(59,130,246,0.35); }
 .hc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; }
-.hc-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hc-name { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hc-code { font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0; }
+
+/* 관심종목 추가바 */
+.watch-addbar { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0 0.9rem; }
+.watch-addbar > .fa-star { color: #f5b301; font-size: 0.85rem; }
+.watch-addbar input {
+    flex: 0 1 260px; min-width: 0; padding: 0.4rem 0.6rem; font-size: 0.85rem;
+    background: rgba(255,255,255,0.04); color: var(--text-primary);
+    border: 1px solid var(--glass-border); border-radius: 8px;
+}
+.watch-addbar input:focus { outline: none; border-color: rgba(59,130,246,0.55); }
+.watch-addbar button {
+    padding: 0.4rem 0.8rem; font-size: 0.82rem; cursor: pointer; color: var(--text-primary);
+    background: rgba(59,130,246,0.18); border: 1px solid rgba(59,130,246,0.4); border-radius: 8px;
+}
+.watch-addbar button:hover { background: rgba(59,130,246,0.3); }
+.watch-msg { font-size: 0.78rem; color: var(--text-muted); }
+.watch-msg.ok { color: #22c55e; }
+.watch-msg.err { color: #ef4444; }
+
+/* 관심종목 섹션 구분 헤더 + 카드 */
+.hc-section-hdr {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 0.4rem;
+    margin: 0.4rem 0 -0.2rem; padding-top: 0.6rem; font-size: 0.82rem; font-weight: 600;
+    color: var(--text-muted); border-top: 1px dashed var(--glass-border);
+}
+.hc-section-hdr .fa-star { color: #f5b301; }
+.hc-card.hc-watch { background: rgba(245,179,1,0.04); border-color: rgba(245,179,1,0.22); }
+.hc-card.hc-watch:hover { border-color: rgba(245,179,1,0.45); }
+.hc-del {
+    flex-shrink: 0; width: 18px; height: 18px; line-height: 16px; text-align: center;
+    padding: 0; margin-left: 0.2rem; font-size: 0.95rem; cursor: pointer; border-radius: 5px;
+    color: var(--text-muted); background: transparent; border: 1px solid var(--glass-border);
+}
+.hc-del:hover { color: #ef4444; border-color: rgba(239,68,68,0.5); }
 .hc-valrow { display: flex; align-items: baseline; gap: 0.5rem; margin: 0.3rem 0 0.1rem; }
 .hc-val { font-size: 1.05rem; font-weight: 700; }
 .hc-chg { font-size: 0.78rem; font-weight: 600; }

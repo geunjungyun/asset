@@ -342,52 +342,113 @@ async function loadHoldingsCharts() {
     }
 }
 
-function renderHoldingsChartsGrid(d) {
-    const grid = document.getElementById('holdings-charts-grid');
-    if (!grid || !d) return;
-    grid.innerHTML = '';
-    sortByHoldingOrder(d.charts || [], ch => ch.code).forEach(ch => {
-        const up = (ch.change || 0) >= 0;
-        const cur = ch.currency || accountCurrency;
-        const cls = up ? 'positive' : 'negative';
-        const held = (holdingsList || []).find(h => h.code === ch.code)
-                  || (domesticList || []).find(h => h.code === ch.code);
-        // 전체 수익률(매입평균가 대비). 계좌 pnl_rate 우선, 없으면 평단으로 계산.
-        let totRet = null;
+function buildChartCard(ch, isWatch) {
+    const up = (ch.change || 0) >= 0;
+    const cur = ch.currency || accountCurrency;
+    const cls = up ? 'positive' : 'negative';
+    const held = (holdingsList || []).find(h => h.code === ch.code)
+              || (domesticList || []).find(h => h.code === ch.code);
+    // 전체 수익률(매입평균가 대비) — 보유종목만. 관심종목은 등락율·차트만.
+    let totRet = null;
+    if (!isWatch) {
         if (held && held.pnl_rate != null) totRet = Number(held.pnl_rate);
         else if (held && Number(held.avg_price) > 0 && ch.value)
             totRet = (ch.value - Number(held.avg_price)) / Number(held.avg_price) * 100;
-        const retCls = (totRet || 0) >= 0 ? 'positive' : 'negative';
-        // 기준선: 평단(회색) + 목표(초록) + 손절(빨강)
-        const lines = [];
+    }
+    const retCls = (totRet || 0) >= 0 ? 'positive' : 'negative';
+    // 기준선: 평단 + 목표 + 손절 — 보유종목만
+    const lines = [];
+    if (!isWatch) {
         if (showAvg && held && Number.isFinite(Number(held.avg_price)))
             lines.push({ value: Number(held.avg_price), label: '평단', kind: 'avg' });
         const ts = targetStops[ch.code] || {};
-        if (showTargetStop) {   // 옵션: 목표·손절 선 표시
+        if (showTargetStop) {
             if (Number.isFinite(Number(ts.target)) && ts.target > 0)
                 lines.push({ value: Number(ts.target), label: '목표', kind: 'target' });
             if (Number.isFinite(Number(ts.stop)) && ts.stop > 0)
                 lines.push({ value: Number(ts.stop), label: '손절', kind: 'stop' });
         }
-        const card = document.createElement('div');
-        card.className = 'hc-card';
-        card.innerHTML = `
-            <div class="hc-top">
-                <span class="hc-name">${ch.name || ch.code}</span>
-                <span class="hc-code">${ch.code}</span>
-            </div>
-            <div class="hc-valrow">
-                <span class="hc-val">${money(ch.value, cur)}</span>
-                <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
-                ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
-            </div>
-            ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : [])}
-        `;
-        grid.appendChild(card);
-    });
-    if (!grid.children.length) {
-        grid.innerHTML = '<div class="loading-row">보유 종목이 없습니다.</div>';
     }
+    const card = document.createElement('div');
+    card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
+    card.innerHTML = `
+        <div class="hc-top">
+            <span class="hc-name">${ch.name || ch.code}</span>
+            <span class="hc-code">${ch.code}</span>
+            ${isWatch ? `<button class="hc-del" title="관심종목에서 제거" data-code="${ch.code}">&times;</button>` : ''}
+        </div>
+        <div class="hc-valrow">
+            <span class="hc-val">${money(ch.value, cur)}</span>
+            <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
+            ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
+        </div>
+        ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : [])}
+    `;
+    if (isWatch) {
+        const del = card.querySelector('.hc-del');
+        if (del) del.addEventListener('click', () => removeWatch(del.dataset.code));
+    }
+    return card;
+}
+
+function renderHoldingsChartsGrid(d) {
+    const grid = document.getElementById('holdings-charts-grid');
+    if (!grid || !d) return;
+    const all = d.charts || [];
+    const heldCharts = all.filter(ch => ch.kind !== 'watch');
+    const watchCharts = all.filter(ch => ch.kind === 'watch');
+    grid.innerHTML = '';
+
+    sortByHoldingOrder(heldCharts, ch => ch.code).forEach(ch => grid.appendChild(buildChartCard(ch, false)));
+    if (!heldCharts.length) {
+        const row = document.createElement('div');
+        row.className = 'loading-row';
+        row.textContent = '보유 종목이 없습니다.';
+        grid.appendChild(row);
+    }
+
+    if (watchCharts.length) {
+        const hdr = document.createElement('div');
+        hdr.className = 'hc-section-hdr';
+        hdr.innerHTML = '<i class="fa-solid fa-star"></i> 관심종목';
+        grid.appendChild(hdr);
+        watchCharts.forEach(ch => grid.appendChild(buildChartCard(ch, true)));
+    }
+}
+
+async function addWatch() {
+    const input = document.getElementById('watch-input');
+    const msg = document.getElementById('watch-msg');
+    const code = (input.value || '').trim();
+    if (!code) return;
+    if (msg) { msg.textContent = '추가 중…'; msg.className = 'watch-msg'; }
+    try {
+        const res = await fetch('/api/watch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || '추가 실패');
+        input.value = '';
+        if (msg) { msg.textContent = `${data.item.name || code} 추가됨`; msg.className = 'watch-msg ok'; }
+        loadHoldingsCharts();
+    } catch (err) {
+        if (msg) { msg.textContent = err.message || '추가 실패'; msg.className = 'watch-msg err'; }
+    }
+}
+
+async function removeWatch(code) {
+    try {
+        await fetch(`/api/watch/${encodeURIComponent(code)}`, { method: 'DELETE' });
+        loadHoldingsCharts();
+    } catch (err) { console.error(err); }
+}
+
+function initWatchBar() {
+    const btn = document.getElementById('watch-add-btn');
+    const input = document.getElementById('watch-input');
+    if (btn) btn.addEventListener('click', addWatch);
+    if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addWatch(); });
 }
 
 function initHoldingToggle() {
@@ -482,6 +543,8 @@ function initRebalance() {
         document.getElementById('rebalance-panel').hidden = rightView !== 'rebalance';
         document.getElementById('trade-panel').hidden = rightView !== 'trade';
         document.getElementById('hd-period-toggle').style.display = charts ? '' : 'none';
+        const wab = document.getElementById('watch-addbar');
+        if (wab) wab.style.display = charts ? '' : 'none';
         const optw = document.getElementById('chart-opts');
         if (optw) optw.style.display = charts ? '' : 'none';
         document.getElementById('right-title').textContent = RIGHT_TITLES[rightView] || '보유종목 차트';
@@ -1952,6 +2015,7 @@ async function loadAll() {
 document.addEventListener('DOMContentLoaded', () => {
     initPeriodToggle();
     initHoldingToggle();
+    initWatchBar();
     initRebalance();
     initSidebarNav();
     initSectorPeriodToggle();
