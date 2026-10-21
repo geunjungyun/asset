@@ -352,10 +352,16 @@ async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
             params = {"mrkt_div_code": "OV", "mrkt_cls_code": exch, "iscd": symbol,
                       "dely_rltm_cls_code": "0", "mod_stpr_cls_code": "1"}
             body = await _get(OVS_CANDLES_DAYS, params)
-            rows = body.get("data", [])  # 최신순, 최신=전일(주간거래 당일은 미포함)
+            rows = body.get("data", [])  # 최신순
             if not rows:
                 return {"price": None, "prev_close": None}
-            return {"price": None, "prev_close": round(_to_float(rows[0].get("prpr")), 4)}
+            today = datetime.now(KST).strftime("%Y%m%d")
+            top = rows[0]
+            price = _to_float(top.get("prpr"))
+            if (top.get("date") or "") == today:  # 주간거래 종료 후: 오늘 봉 → 공식 전일대비
+                prev = price - _to_float(top.get("prdy_vrss"))
+                return {"price": price, "prev_close": round(prev, 4)}
+            return {"price": None, "prev_close": round(price, 4)}  # 장중: 최신=전일, 현재가는 분봉
     except MeritzError:
         return {"price": None, "prev_close": None}
 
