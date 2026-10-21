@@ -188,6 +188,10 @@ async def get_balance() -> dict:
         purchase_total += purchase
         eval_total += evalu
         pnl_total += pnl
+        # 공식 전일종가 = 현재가 − 전일대비(부호 포함). 일봉 저장소보다 신뢰도 높음(앱과 동일).
+        psnt = _to_float(row.get("psnt_prc"))
+        vrss = _to_float(row.get("prdy_vrss_rsfl_crnc_prc"))
+        prdy_close = round(psnt - vrss, 4) if (psnt and vrss is not None) else None
         holdings.append({
             "code": code,
             "name": row.get("isnm", ""),
@@ -195,7 +199,8 @@ async def get_balance() -> dict:
             "exch": exch,
             "quantity": _norm_qty(qty),
             "avg_price": _to_float(row.get("avrg_unpr")),
-            "current_price": _to_float(row.get("psnt_prc")),
+            "current_price": psnt,
+            "prdy_close": prdy_close,
             "purchase_amount": round(purchase, 2),
             "eval_amount": round(evalu, 2),
             "eval_pnl": round(pnl, 2),
@@ -353,6 +358,7 @@ async def get_domestic_balance() -> dict:
             "quantity": _norm_qty(qty),
             "avg_price": _to_float(row.get("byng_unpr")),  # 매입단가
             "current_price": _to_float(row.get("psnt_prc")),
+            "prdy_close": _to_float(row.get("prdy_last_prc")),  # 공식 전일종가(앱과 동일)
             "purchase_amount": round(purchase, 2),
             "eval_amount": round(evalu, 2),
             "eval_pnl": round(pnl, 2),

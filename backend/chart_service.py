@@ -173,9 +173,14 @@ def _prev_day_change(symbol: str, mkt: str = "overseas") -> tuple[float | None, 
     return pct, round(prev_close, 4)
 
 
-def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas") -> dict:
-    """장중(1h~1D) 등락폭을 전일 정규장 마감 종가 기준으로 덮어쓴다."""
-    pc = _prev_session_close(symbol, mkt)
+def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas",
+                      prev_close: float | None = None) -> dict:
+    """장중(1h~1D) 등락폭을 전일 정규장 마감 종가 기준으로 덮어쓴다.
+
+    prev_close(잔고의 공식 전일종가)가 주어지면 그것을 쓴다. 메리츠 일봉 저장소의
+    종가가 공식 전일종가와 어긋나는 경우가 있어(앱과 불일치), 잔고값을 우선한다.
+    """
+    pc = prev_close if (prev_close and prev_close > 0) else _prev_session_close(symbol, mkt)
     price = res.get("value")
     if pc and price:
         res["change"] = round(price - pc, 4)
@@ -220,7 +225,8 @@ async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict
 
 
 async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
-                        live_price: float | None = None) -> dict:
+                        live_price: float | None = None,
+                        prev_close: float | None = None) -> dict:
     is_intraday = period == "1D" or period in HOUR_MAP  # 1h~1D 는 전일종가 기준 등락폭
 
     if meritz_settings.enabled:
@@ -228,13 +234,13 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         if period == "1D":
             res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D", live_price)
             if res is not None:
-                return _apply_prev_close(res, symbol, mkt)
+                return _apply_prev_close(res, symbol, mkt, prev_close)
         # Nh: 최근 N시간 롤링 윈도우
         elif period in HOUR_MAP:
             anchor = int(time.time()) - HOUR_MAP[period] * 3600
             res = await _chart_intraday(symbol, exch, mkt, anchor, period, live_price)
             if res is not None:
-                return _apply_prev_close(res, symbol, mkt)
+                return _apply_prev_close(res, symbol, mkt, prev_close)
 
         # 2D~5D: 일봉(완전) + 오늘 5분봉 결합
         elif period in MULTIDAY_DAYS:
@@ -254,7 +260,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
     # 스토어에 충분치 않으면 Yahoo 폴백(해외=티커, 국내=6자리→.KS)
     if len(pts) < 2:
         res = await market.get_stock_chart(symbol, period)
-        return _apply_prev_close(res, symbol, mkt) if is_intraday else res
+        return _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
 
     if len(pts) > 400:
         pts = pts[:: (len(pts) // 400) or 1]
@@ -271,4 +277,4 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
         **p,
     }
-    return _apply_prev_close(res, symbol, mkt) if is_intraday else res
+    return _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res

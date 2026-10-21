@@ -162,7 +162,8 @@ async def holdings_charts(period: str = "realtime") -> dict:
                 async with sem:
                     return await chart_service.holding_chart(
                         h["symbol"], h["exch"], h["market"], period,
-                        live_price=h.get("current_price"))
+                        live_price=h.get("current_price"),
+                        prev_close=h.get("prdy_close"))
 
             charts = await asyncio.gather(*[_one(h) for h in holdings])
             for ch, h in zip(charts, holdings):
