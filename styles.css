@@ -913,10 +913,10 @@ header {
     .kis-section .holdings-table td { padding: 0.3rem 0.7rem; }
     .holdings-charts{ grid-area: charts; margin-bottom: 0; min-height: 0;
         display: flex; flex-direction: column; }
-    /* 보유종목 차트: 영역을 가득 채움 (4×2, 셀 높이 균등) */
-    .holdings-charts .hc-grid { flex: 1; min-height: 0; overflow: hidden;
-        grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(0, 1fr); gap: 0.8rem; }
-    .holdings-charts .hc-card { display: flex; flex-direction: column; min-height: 0; }
+    /* 보유종목 차트: 카드마다 넉넉한 높이 보장 + 넘치면 영역 내 세로 스크롤 */
+    .holdings-charts .hc-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: start;
+        grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; gap: 0.8rem; }
+    .holdings-charts .hc-card { display: flex; flex-direction: column; min-height: 230px; }
     .holdings-charts .hc-card .spark-wrap,
     .holdings-charts .hc-card .spark-wrap--lg { flex: 1; height: auto; min-height: 0; margin-top: 0.4rem; }
     .holdings-charts .hc-card .spark { height: 100%; }
