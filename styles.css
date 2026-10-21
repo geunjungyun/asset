@@ -772,21 +772,22 @@ header {
 .hc-name { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hc-code { font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0; }
 
-/* 관심종목 추가바 */
-.watch-addbar { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0 0.9rem; }
-.watch-addbar > .fa-star { color: #f5b301; font-size: 0.85rem; }
+/* 관심종목 추가바 — 보유종목 차트 헤더(툴바)에 인라인 배치 */
+.watch-addbar { display: inline-flex; align-items: center; gap: 0.35rem; }
+.watch-addbar > .fa-star { color: #f5b301; font-size: 0.8rem; }
 .watch-addbar input {
-    flex: 0 1 260px; min-width: 0; padding: 0.4rem 0.6rem; font-size: 0.85rem;
+    flex: 0 1 150px; min-width: 90px; padding: 0.28rem 0.5rem; font-size: 0.8rem;
     background: rgba(255,255,255,0.04); color: var(--text-primary);
-    border: 1px solid var(--glass-border); border-radius: 8px;
+    border: 1px solid var(--glass-border); border-radius: 7px;
 }
 .watch-addbar input:focus { outline: none; border-color: rgba(59,130,246,0.55); }
 .watch-addbar button {
-    padding: 0.4rem 0.8rem; font-size: 0.82rem; cursor: pointer; color: var(--text-primary);
-    background: rgba(59,130,246,0.18); border: 1px solid rgba(59,130,246,0.4); border-radius: 8px;
+    padding: 0.28rem 0.6rem; font-size: 0.78rem; cursor: pointer; color: var(--text-primary);
+    background: rgba(59,130,246,0.18); border: 1px solid rgba(59,130,246,0.4); border-radius: 7px;
 }
 .watch-addbar button:hover { background: rgba(59,130,246,0.3); }
-.watch-msg { font-size: 0.78rem; color: var(--text-muted); }
+.watch-msg { font-size: 0.74rem; color: var(--text-muted); max-width: 150px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
 .watch-msg.ok { color: #22c55e; }
 .watch-msg.err { color: #ef4444; }
 
@@ -913,10 +914,10 @@ header {
     .kis-section .holdings-table td { padding: 0.3rem 0.7rem; }
     .holdings-charts{ grid-area: charts; margin-bottom: 0; min-height: 0;
         display: flex; flex-direction: column; }
-    /* 보유종목 차트: 카드마다 넉넉한 높이 보장 + 넘치면 영역 내 세로 스크롤 */
-    .holdings-charts .hc-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: start;
-        grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; gap: 0.8rem; }
-    .holdings-charts .hc-card { display: flex; flex-direction: column; min-height: 230px; }
+    /* 보유종목 차트: 영역을 채우되 행 최소높이 보장, 넘치면 세로 스크롤 */
+    .holdings-charts .hc-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: stretch;
+        grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(170px, 1fr); gap: 0.8rem; }
+    .holdings-charts .hc-card { display: flex; flex-direction: column; min-height: 0; }
     .holdings-charts .hc-card .spark-wrap,
     .holdings-charts .hc-card .spark-wrap--lg { flex: 1; height: auto; min-height: 0; margin-top: 0.4rem; }
     .holdings-charts .hc-card .spark { height: 100%; }

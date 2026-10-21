@@ -407,13 +407,8 @@ function renderHoldingsChartsGrid(d) {
         grid.appendChild(row);
     }
 
-    if (watchCharts.length) {
-        const hdr = document.createElement('div');
-        hdr.className = 'hc-section-hdr';
-        hdr.innerHTML = '<i class="fa-solid fa-star"></i> 관심종목';
-        grid.appendChild(hdr);
-        watchCharts.forEach(ch => grid.appendChild(buildChartCard(ch, true)));
-    }
+    // 관심종목은 ★배지 카드로 구분(별도 구분줄 없이 보유종목 뒤에 이어 배치)
+    watchCharts.forEach(ch => grid.appendChild(buildChartCard(ch, true)));
 }
 
 async function addWatch() {
