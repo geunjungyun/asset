@@ -224,8 +224,8 @@ async def _resolve_watch(code: str) -> dict | None:
     if not code:
         return None
     is_domestic = code.isdigit() and len(code) == 6
-    name = ""
-    # 이름 해석(Yahoo longName; 실패해도 치명적 아님)
+    name, yahoo_ok = "", False
+    # 이름 해석(Yahoo longName; 실패해도 치명적 아님) + Yahoo 데이터 유무 확인
     try:
         import httpx
         async with httpx.AsyncClient(timeout=12.0) as client:
@@ -234,12 +234,16 @@ async def _resolve_watch(code: str) -> dict | None:
                 meta, pts = await market._fetch_chart(client, sym, "1d", "5d")
                 if meta or pts:
                     name = (meta or {}).get("longName") or (meta or {}).get("shortName") or ""
+                    yahoo_ok = bool(pts)
                     break
     except Exception:  # noqa: BLE001
         pass
 
     if is_domestic:
-        return {"symbol": code, "market": "domestic", "exch": "", "name": name or code}
+        q = await meritz_client.day_quote(code, "", "domestic") if meritz_settings.enabled else {}
+        has_data = bool(q.get("prev_close") or q.get("price")) or yahoo_ok
+        return {"symbol": code, "market": "domestic", "exch": "", "name": name or code,
+                "has_data": has_data}
     # 해외: 거래소 자동 탐지(OQ→NY), 당일 전일종가가 나오는 거래소 채택
     exch = ""
     if meritz_settings.enabled:
@@ -248,7 +252,9 @@ async def _resolve_watch(code: str) -> dict | None:
             if q.get("prev_close"):
                 exch = ex
                 break
-    return {"symbol": code, "market": "overseas", "exch": exch or "OQ", "name": name or code}
+    has_data = bool(exch) or yahoo_ok
+    return {"symbol": code, "market": "overseas", "exch": exch or "OQ", "name": name or code,
+            "has_data": has_data}
 
 
 @app.get("/api/watch")
@@ -263,6 +269,10 @@ async def watch_add(payload: dict) -> JSONResponse:
     info = await _resolve_watch(payload.get("code", ""))
     if not info:
         return JSONResponse({"error": "유효한 티커/종목코드가 아닙니다."}, status_code=400)
+    if not info.get("has_data"):
+        return JSONResponse(
+            {"error": f"'{info['symbol']}' 시세를 찾을 수 없습니다(지수·비상장 등 차트 불가)."},
+            status_code=400)
     candle_store.upsert_watch(info["symbol"], info["market"], info["exch"],
                               info["name"], "watch", ["5m", "1d"])
     if info["name"]:
