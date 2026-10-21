@@ -187,17 +187,28 @@ def upsert_watch(symbol: str, market: str, exch: str, name: str,
         )
 
 
-def list_watch(enabled_only: bool = True) -> list[dict]:
+def list_watch(enabled_only: bool = True, role: str | None = None) -> list[dict]:
     q = "SELECT symbol, market, exch, name, role, intervals, enabled FROM watch"
+    conds, args = [], []
     if enabled_only:
-        q += " WHERE enabled=1"
+        conds.append("enabled=1")
+    if role is not None:
+        conds.append("role=?"); args.append(role)
+    if conds:
+        q += " WHERE " + " AND ".join(conds)
     with _db() as c:
-        rows = c.execute(q).fetchall()
+        rows = c.execute(q, args).fetchall()
     return [
         {"symbol": r[0], "market": r[1], "exch": r[2], "name": r[3],
          "role": r[4], "intervals": json.loads(r[5] or "[]"), "enabled": r[6]}
         for r in rows
     ]
+
+
+def remove_watch(symbol: str) -> None:
+    """관심종목 제거(레지스트리에서 삭제). 누적된 캔들은 분석용으로 보존."""
+    with _lock, _db() as c:
+        c.execute("DELETE FROM watch WHERE symbol=?", (symbol,))
 
 
 # --------------------------------------------------------------------------- #

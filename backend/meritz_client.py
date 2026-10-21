@@ -324,6 +324,42 @@ async def domestic_candles(code: str, kind: str, interval_sec: int | None = None
     return out
 
 
+async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
+    """잔고 없는 종목(관심종목)의 현재가·공식 전일종가를 일봉에서 산출.
+
+    - 국내: 당일 봉이 실시간(stck_clpr + prdy_vrss) → price, prev_close=price−prdy_vrss(공식).
+            당일 봉이 없으면(장 전) 최신 봉 종가를 prev_close로.
+    - 해외: 'days' 최신 봉은 전일(주간거래 당일은 분봉에서) → prev_close=최신봉 종가.
+            price 는 상위(_chart_intraday 분봉)에서 결정하도록 None.
+    반환: {"price": float|None, "prev_close": float|None}
+    """
+    try:
+        if mkt == "domestic":
+            iscd = symbol if symbol[:1] == "A" else "A" + symbol
+            params = {"mrkt_div_code": "J", "iscd": iscd, "mod_stpr_cls_code": "0"}
+            body = await _get(KRX_CANDLES_DAYS, params)
+            rows = body.get("data", [])  # 최신순
+            if not rows:
+                return {"price": None, "prev_close": None}
+            today = datetime.now(KST).strftime("%Y%m%d")
+            top = rows[0]
+            price = _to_float(top.get("stck_clpr"))
+            if (top.get("date") or "") == today:  # 당일 봉(실시간) → 공식 전일대비로 전일종가
+                prev = price - _to_float(top.get("prdy_vrss"))
+                return {"price": price, "prev_close": round(prev, 4)}
+            return {"price": None, "prev_close": round(price, 4)}  # 장 전: 최신=전일종가
+        else:  # overseas
+            params = {"mrkt_div_code": "OV", "mrkt_cls_code": exch, "iscd": symbol,
+                      "dely_rltm_cls_code": "0", "mod_stpr_cls_code": "1"}
+            body = await _get(OVS_CANDLES_DAYS, params)
+            rows = body.get("data", [])  # 최신순, 최신=전일(주간거래 당일은 미포함)
+            if not rows:
+                return {"price": None, "prev_close": None}
+            return {"price": None, "prev_close": round(_to_float(rows[0].get("prpr")), 4)}
+    except MeritzError:
+        return {"price": None, "prev_close": None}
+
+
 def _is_domestic(iscd: str) -> bool:
     """국내(원화) 종목 여부. 해외는 'AAPL.OQ'처럼 '.'로 거래소 접미사가 붙는다."""
     return bool(iscd) and "." not in iscd

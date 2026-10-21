@@ -168,6 +168,8 @@ async def holdings_charts(period: str = "realtime") -> dict:
             charts = await asyncio.gather(*[_one(h) for h in holdings])
             for ch, h in zip(charts, holdings):
                 ch["name"] = h.get("name", ch.get("code"))
+                ch["kind"] = "held"
+            charts = list(charts) + await _watch_charts(period)
             return {"period": period, "currency": "USD", "charts": charts}
 
     # 폴백: mock(또는 KIS) 보유종목 → Yahoo
@@ -181,13 +183,98 @@ async def holdings_charts(period: str = "realtime") -> dict:
     )
     for ch, h in zip(charts, holdings):
         ch["name"] = h.get("name", ch.get("code"))
+        ch["kind"] = "held"
     return {"period": period, "currency": bal.get("currency", "KRW"), "charts": charts}
+
+
+async def _watch_charts(period: str) -> list[dict]:
+    """관심종목(watch) 차트. 잔고가 없어 현재가·전일종가는 메리츠 캔들에서 산출."""
+    if not meritz_settings.enabled:
+        return []
+    watch = candle_store.list_watch(role="watch")
+    if not watch:
+        return []
+    sem = asyncio.Semaphore(4)
+
+    async def _one(w):
+        async with sem:
+            q = await meritz_client.day_quote(w["symbol"], w["exch"], w["market"])
+            ch = await chart_service.holding_chart(
+                w["symbol"], w["exch"], w["market"], period,
+                live_price=q.get("price"), prev_close=q.get("prev_close"))
+            ch["name"] = w.get("name") or ch.get("code")
+            ch["kind"] = "watch"
+            return ch
+
+    return list(await asyncio.gather(*[_one(w) for w in watch]))
 
 
 @app.get("/api/candles/stats")
 async def candles_stats() -> dict:
     """캔들 누적 저장소 진단(종목·간격별 행수/기간)."""
     return candle_store.stats()
+
+
+# --------------------------------------------------------------------------- #
+# 관심종목(watch) — 보유종목 차트에 함께 표시
+# --------------------------------------------------------------------------- #
+async def _resolve_watch(code: str) -> dict | None:
+    """티커/종목코드 → {symbol, market, exch, name}. 해외 거래소(OQ/NY)·이름 자동 해석."""
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+    is_domestic = code.isdigit() and len(code) == 6
+    name = ""
+    # 이름 해석(Yahoo longName; 실패해도 치명적 아님)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            cands = ([code + ".KS", code + ".KQ"] if is_domestic else [code])
+            for sym in cands:
+                meta, pts = await market._fetch_chart(client, sym, "1d", "5d")
+                if meta or pts:
+                    name = (meta or {}).get("longName") or (meta or {}).get("shortName") or ""
+                    break
+    except Exception:  # noqa: BLE001
+        pass
+
+    if is_domestic:
+        return {"symbol": code, "market": "domestic", "exch": "", "name": name or code}
+    # 해외: 거래소 자동 탐지(OQ→NY), 당일 전일종가가 나오는 거래소 채택
+    exch = ""
+    if meritz_settings.enabled:
+        for ex in ("OQ", "NY"):
+            q = await meritz_client.day_quote(code, ex, "overseas")
+            if q.get("prev_close"):
+                exch = ex
+                break
+    return {"symbol": code, "market": "overseas", "exch": exch or "OQ", "name": name or code}
+
+
+@app.get("/api/watch")
+async def watch_list() -> dict:
+    """관심종목 목록."""
+    return {"items": candle_store.list_watch(role="watch")}
+
+
+@app.post("/api/watch")
+async def watch_add(payload: dict) -> JSONResponse:
+    """관심종목 추가. body: {code: "TSLA" | "005930"}."""
+    info = await _resolve_watch(payload.get("code", ""))
+    if not info:
+        return JSONResponse({"error": "유효한 티커/종목코드가 아닙니다."}, status_code=400)
+    candle_store.upsert_watch(info["symbol"], info["market"], info["exch"],
+                              info["name"], "watch", ["5m", "1d"])
+    if info["name"]:
+        candle_store.set_name(info["symbol"], info["name"])
+    return JSONResponse({"ok": True, "item": info})
+
+
+@app.delete("/api/watch/{code}")
+async def watch_remove(code: str) -> dict:
+    """관심종목 제거."""
+    candle_store.remove_watch(code.strip().upper())
+    return {"ok": True}
 
 
 @app.get("/api/ledger/transactions")
