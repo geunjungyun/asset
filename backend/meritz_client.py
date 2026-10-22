@@ -324,23 +324,18 @@ async def domestic_candles(code: str, kind: str, interval_sec: int | None = None
     return out
 
 
-def _session_live(mkt: str) -> bool:
-    """해당 시장의 '장중 실시간 체결' 시간대 여부(KST 대략). 장중이면 현재가는 분봉에서."""
-    h = datetime.now(KST).hour
-    if mkt == "domestic":
-        return 9 <= h < 16            # 국내 정규장 09:00~15:30
-    return (10 <= h < 18) or h >= 22 or h < 5  # 해외 주간거래 + 미국 정규장(대략)
-
-
 async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
-    """현재가·공식 전일종가를 일봉에서 산출(보유·관심 공용). 시간대 일관 처리.
+    """현재가·공식 전일종가를 일봉에서 산출(보유·관심 공용).
 
     메리츠 잔고(psnt_prc/전일대비)는 US 마감 직후 전환 시간에 서로 다른 세션 값이
     섞여 깨지는 경우가 있어, 정합성 높은 일봉을 단일 기준으로 쓴다.
-    - 오늘 봉이 실데이터(prdy_vrss≠0): price=오늘종가, prev=price−prdy_vrss(공식 전일대비)
-    - 오늘 봉이 플랫 placeholder(prdy_vrss=0, 공백): 직전 실세션으로 프리즈
-    - 오늘 봉 없음: 장중이면 price=None(분봉이 현재가), prev=최신 종가
-                    비장중이면 직전 실세션 결과를 프리즈(앱과 동일)
+
+    ※ 해외(미국): 일봉의 날짜는 '미국 날짜'라 KST '오늘'과 하루 어긋난다(정규장은
+      KST 새벽에 진행). 따라서 date==오늘 비교를 쓰지 않고, 가장 최근 '실세션' 봉
+      (플랫 placeholder 제외)을 현재/직전 세션으로 본다. 그 봉의 prdy_ctrt가 곧 금일 등락.
+      단 한국 주간거래 시간(KST 10:00~17:40)엔 일봉에 그 세션이 없어, 현재가는 분봉에
+      맡기고(price=None) 전일만 최신 실세션 종가로 준다.
+    ※ 국내: 같은 KST 날짜라 date==오늘 비교가 유효.
     반환: {"price": float|None, "prev_close": float|None}
     """
     close_f = "stck_clpr" if mkt == "domestic" else "prpr"
@@ -356,22 +351,26 @@ async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
         rows = body.get("data", [])  # 최신순
         if not rows:
             return {"price": None, "prev_close": None}
-        today = datetime.now(KST).strftime("%Y%m%d")
-        top = rows[0]
-        top_date = top.get("date") or ""
-        # 가장 최근 '실세션' 봉(플랫 placeholder 제외)
-        real = next((r for r in rows if _to_float(r.get("prdy_vrss")) != 0), top)
+        # 가장 최근 '실세션' 봉(플랫 placeholder=prdy_vrss 0 은 건너뜀)
+        real = next((r for r in rows if _to_float(r.get("prdy_vrss")) != 0), rows[0])
         r_px = _to_float(real.get(close_f))
         r_prev = round(r_px - _to_float(real.get("prdy_vrss")), 4)
 
-        if top_date == today and _to_float(top.get("prdy_vrss")) != 0:
-            px = _to_float(top.get(close_f))            # 오늘 봉 실데이터(장중/마감)
-            return {"price": px, "prev_close": round(px - _to_float(top.get("prdy_vrss")), 4)}
-        if top_date == today:                           # 오늘 봉이 플랫 placeholder(공백)
+        if mkt == "domestic":
+            today = datetime.now(KST).strftime("%Y%m%d")
+            top = rows[0]
+            if (top.get("date") or "") == today and _to_float(top.get("prdy_vrss")) != 0:
+                px = _to_float(top.get(close_f))        # 당일 봉 실데이터(장중/마감)
+                return {"price": px, "prev_close": round(px - _to_float(top.get("prdy_vrss")), 4)}
+            if 9 <= datetime.now(KST).hour < 16:        # 장중인데 당일 봉이 아직 플랫
+                return {"price": None, "prev_close": round(_to_float(top.get(close_f)), 4)}
             return {"price": r_px, "prev_close": r_prev}
-        if _session_live(mkt):                          # 오늘 봉 없음 + 장중 → 현재가는 분봉
-            return {"price": None, "prev_close": round(_to_float(top.get(close_f)), 4)}
-        return {"price": r_px, "prev_close": r_prev}    # 오늘 봉 없음 + 비장중 → 직전 세션 프리즈
+
+        # 해외: 주간거래 시간대면 현재가는 분봉, 전일=최신 실세션 종가
+        if 10 <= datetime.now(KST).hour < 18:
+            return {"price": None, "prev_close": r_px}
+        # 그 외(미국 정규장/공백/마감): 최신 실세션 봉의 공식 전일대비
+        return {"price": r_px, "prev_close": r_prev}
     except MeritzError:
         return {"price": None, "prev_close": None}
 
