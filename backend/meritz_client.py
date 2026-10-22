@@ -357,14 +357,19 @@ async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
         r_prev = round(r_px - _to_float(real.get("prdy_vrss")), 4)
 
         if mkt == "domestic":
-            today = datetime.now(KST).strftime("%Y%m%d")
+            now = datetime.now(KST)
+            today = now.strftime("%Y%m%d")
             top = rows[0]
-            if (top.get("date") or "") == today and _to_float(top.get("prdy_vrss")) != 0:
-                px = _to_float(top.get(close_f))        # 당일 봉 실데이터(장중/마감)
+            top_today = (top.get("date") or "") == today
+            if top_today and _to_float(top.get("prdy_vrss")) != 0:
+                px = _to_float(top.get(close_f))        # 오늘 거래 발생(장중/마감 후) → 금일 등락
                 return {"price": px, "prev_close": round(px - _to_float(top.get("prdy_vrss")), 4)}
-            if 9 <= datetime.now(KST).hour < 16:        # 장중인데 당일 봉이 아직 플랫
+            if 9 <= now.hour < 16:                      # 장중인데 당일 봉 아직 플랫 → 분봉이 현재가
                 return {"price": None, "prev_close": round(_to_float(top.get(close_f)), 4)}
-            return {"price": r_px, "prev_close": r_prev}
+            if top_today:                               # 개장 전 플랫 placeholder → 전일종가 기준 0%
+                px = _to_float(top.get(close_f))
+                return {"price": px, "prev_close": px}
+            return {"price": r_px, "prev_close": r_prev}  # 오늘 봉 없음(마감 후 밤) → 최신 완료세션
 
         # 해외: 주간거래 시간대면 현재가는 분봉, 전일=최신 실세션 종가
         if 10 <= datetime.now(KST).hour < 18:

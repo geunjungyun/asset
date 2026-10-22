@@ -160,15 +160,12 @@ async def holdings_charts(period: str = "realtime") -> dict:
 
             async def _one(h):
                 async with sem:
-                    # 국내: 잔고의 직접 전일종가(prdy_last_prc)가 신뢰도 높음.
-                    # 해외: 잔고 전일대비(psnt−prdy_vrss)가 US 마감 직후 전환 시간에 깨져,
-                    #       정합성 높은 일봉 기준(day_quote)으로 현재가·전일종가 산출.
-                    if h["market"] == "domestic":
-                        lp, pc = h.get("current_price"), h.get("prdy_close")
-                    else:
-                        q = await meritz_client.day_quote(h["symbol"], h["exch"], h["market"])
-                        lp = q.get("price") if q.get("price") is not None else h.get("current_price")
-                        pc = q.get("prev_close") or h.get("prdy_close")
+                    # 금일 등락은 정합성 높은 일봉 기준(day_quote). 잔고의 전일대비는
+                    # 전환 시간(US 마감 직후 등)에 서로 다른 세션 값이 섞여 깨진다.
+                    # 장중이면 day_quote가 price=None → 잔고 실시간 현재가로 보완.
+                    q = await meritz_client.day_quote(h["symbol"], h["exch"], h["market"])
+                    lp = q.get("price") if q.get("price") is not None else h.get("current_price")
+                    pc = q.get("prev_close") or h.get("prdy_close")
                     return await chart_service.holding_chart(
                         h["symbol"], h["exch"], h["market"], period,
                         live_price=lp, prev_close=pc)
