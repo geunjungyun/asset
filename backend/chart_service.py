@@ -92,7 +92,7 @@ def _intraday_interval(span_sec: int) -> int:
 # 시간 단위(Nh) 기간 → 시간 수
 HOUR_MAP = {"1h": 1, "2h": 2, "3h": 3, "4h": 4, "6h": 6, "8h": 8, "10h": 10, "12h": 12}
 # 멀티데이(2D~5D) 기간 → 일 수
-MULTIDAY_DAYS = {"2D": 2, "3D": 3, "4D": 4, "5D": 5}
+MULTIDAY_DAYS = {"2D": 2, "3D": 3, "4D": 4, "5D": 5, "1W": 7}
 
 
 async def _chart_intraday(symbol: str, exch: str, mkt: str, anchor: int, period_label: str,
