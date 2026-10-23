@@ -372,7 +372,7 @@ async def day_quote(symbol: str, exch: str, mkt: str) -> dict:
             return {"price": r_px, "prev_close": r_prev}  # 오늘 봉 없음(마감 후 밤) → 최신 완료세션
 
         # 해외: 주간거래 시간대면 현재가는 분봉, 전일=최신 실세션 종가
-        if 10 <= datetime.now(KST).hour < 18:
+        if 9 <= datetime.now(KST).hour < 18:   # 주간거래(약 09:00~17:40): 현재가=분봉
             return {"price": None, "prev_close": r_px}
         # 그 외(미국 정규장/공백/마감): 최신 실세션 봉의 공식 전일대비
         return {"price": r_px, "prev_close": r_prev}
