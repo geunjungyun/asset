@@ -1200,6 +1200,7 @@ function _drankBadge(d) {
 function renderHeatmap() {
     const box = document.getElementById('sector-heatmap');
     if (!box || !boardData) return;
+    const prevScroll = box.scrollTop;   // 재렌더 시 스크롤 보존
     const sectors = [...(boardData.sectors || [])].sort((a, b) => (a.rank || 99) - (b.rank || 99));
     box.innerHTML = sectors.map(s => {
         const sig = s.sig || {};
@@ -1220,6 +1221,7 @@ function renderHeatmap() {
                 <span class="hm-sec-meta">#${s.rank || '-'} ${_drankBadge(s.drank)} <span class="${(sig.rs || 0) >= 0 ? 'pos' : 'neg'}">${rsTxt}</span></span>
             </div>${inds}</div>`;
     }).join('');
+    if (prevScroll) box.scrollTop = prevScroll;
     const su = document.getElementById('sector-updated');
     if (su) su.textContent = '기준: ' + (boardData.updated_at || '') + ' · ' + (boardData.source || '');
 }
@@ -1322,7 +1324,14 @@ function renderSectorTable() {
             }
         }
     }
+    // 주기 갱신으로 재렌더돼도 스크롤이 맨 위로 튀지 않게 위치 보존
+    const prevWrap = box.querySelector('.tbl-board-wrap');
+    const prevScroll = prevWrap ? prevWrap.scrollTop : 0;
     box.innerHTML = `<div class="tbl-board-wrap"><table class="tbl-board"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+    if (prevScroll) {
+        const w = box.querySelector('.tbl-board-wrap');
+        if (w) w.scrollTop = prevScroll;
+    }
     const su = document.getElementById('sector-updated');
     if (su) su.textContent = '기준: ' + (boardData.updated_at || '') + ' · ' + (boardData.source || '');
 }
