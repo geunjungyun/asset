@@ -11,7 +11,7 @@ import re
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import BASE_DIR
 
@@ -219,6 +219,25 @@ def _days_between(d1: str, d2: str):
 SETTLE_LAG_DAYS = 6   # 체결→결제(정산) 지연 허용창(T+2 국내 ~ T+3 해외 + 주말)
 
 
+def _is_overseas_iscd(iscd: str | None) -> bool:
+    """해외 종목(iscd에 거래소 접미사 '.'). 예: AMGN.OQ"""
+    return bool(iscd) and "." in str(iscd)
+
+
+def _minus_biz_days(yyyymmdd: str, n: int) -> str:
+    """결제일 − n 거래일(주말 제외). 메리츠가 과거 해외 체결일을 안 주므로 추정용."""
+    try:
+        dt = datetime.strptime(yyyymmdd, "%Y%m%d")
+    except (TypeError, ValueError):
+        return yyyymmdd
+    cnt = 0
+    while cnt < n:
+        dt -= timedelta(days=1)
+        if dt.weekday() < 5:   # 월~금
+            cnt += 1
+    return dt.strftime("%Y%m%d")
+
+
 def get_merged(date_from: str | None = None, date_to: str | None = None) -> list[dict]:
     """정산(거래내역)+체결(주문내역)을 병합.
 
@@ -257,6 +276,12 @@ def get_merged(date_from: str | None = None, date_to: str | None = None) -> list
                 consumed.add(id(matched))   # 체결이 대표 → 결제일 정산행 숨김
                 continue
         r["source"] = "settle"
+        # 해외 매매인데 체결 매칭이 없으면(과거 해외 체결 API 부재) 결제일만 있다.
+        # 체결일 감각에 맞게 날짜를 결제−2거래일로 추정하고 (추정) 표기한다.
+        if _is_trade_name(r["smcd_name"]) and _is_overseas_iscd(r.get("iscd")):
+            r["settle_date"] = r["tr_date"]
+            r["tr_date"] = _minus_biz_days(r["tr_date"], 2)
+            r["date_est"] = True
         rows.append(r)
 
     rows.extend(_exec_to_display(e) for e in execs)

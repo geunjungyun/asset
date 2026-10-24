@@ -1576,10 +1576,13 @@ function ledgerRow(r) {
     if (Number(r.tax)) det.push(`세금 ₩${_fmtInt(r.tax)}`);
     if (Number(r.byng_unpr)) det.push(`매입단가 ${_fmtInt(r.byng_unpr)}`);
     det.push(`거래코드 ${r.tr_type_code || '-'}`);
+    if (r.date_est && r.settle_date && r.settle_date.length === 8)
+        det.push(`결제일 ${r.settle_date.slice(4, 6)}-${r.settle_date.slice(6, 8)}(체결일 추정)`);
     det.push(`#${r.srno}`);
     const badge = r.source === 'exec' ? '<span class="lg-badge exec">체결</span>' : '';
+    const estMark = r.date_est ? '<span class="lg-est" title="해외 과거 체결은 메리츠가 날짜를 주지 않아 결제일−2거래일로 추정">(추정)</span>' : '';
     return `<tr class="lg-row" data-srno="${r.srno}">
-        <td class="lg-date">${mmdd}</td>
+        <td class="lg-date">${mmdd}${estMark}</td>
         <td class="lg-kind">${r.smcd_name || '-'}${badge}</td>
         <td class="lg-name">${r.name || '—'}</td>
         <td class="num">${qtyCell}</td>
