@@ -174,10 +174,12 @@ async def get_balance() -> dict:
     holdings = []
     purchase_total = eval_total = pnl_total = 0.0
     currency = "USD"
+    fx_applied = 0.0   # 잔고의 적용환율(exrt) — 고시환율 폴백용
     for row in hold_body.get("data", []):
         qty = _to_float(row.get("rmnd_dqty"))
         if qty <= 0:
             continue
+        fx_applied = _to_float(row.get("exrt")) or fx_applied
         raw_iscd = (row.get("iscd") or "").strip()         # 예: "AMD.OQ"
         code = (row.get("ovrs_stck_symb_iscd") or raw_iscd.split(".")[0] or "").strip()
         exch = raw_iscd.split(".")[1] if "." in raw_iscd else ""  # OQ/NY/AX...
@@ -224,6 +226,7 @@ async def get_balance() -> dict:
         "env": "real",
         "broker": "meritz",
         "currency": currency,
+        "fx_applied": round(fx_applied, 4),   # 적용환율(고시환율 폴백용)
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "summary": {
             "total_asset": round(cash + eval_total, 2),
@@ -514,9 +517,7 @@ async def get_overseas_pnl(ctcd: str = "840", from_date: str = "00000000",
     return [data] if isinstance(data, dict) else []
 
 
-async def get_fx_rate(crcd: str = "USD", stnd_date: str | None = None) -> float | None:
-    """고시환율(기준환율). 실패 시 None."""
-    stnd_date = stnd_date or datetime.now(KST).strftime("%Y%m%d")
+async def _fx_on(stnd_date: str, crcd: str) -> float | None:
     try:
         body = await _get(FX_RATES_PATH, {"stnd_date": stnd_date, "crcd": crcd})
     except MeritzError:
@@ -530,6 +531,18 @@ async def get_fx_rate(crcd: str = "USD", stnd_date: str | None = None) -> float 
         return float(str(raw).replace(",", "")) or None
     except (TypeError, ValueError):
         return None
+
+
+async def get_fx_rate(crcd: str = "USD", stnd_date: str | None = None) -> float | None:
+    """고시환율(기준환율). 요청일에 없으면(주말·휴장·이른 아침) 최근 공시일로 역탐색."""
+    base = stnd_date or datetime.now(KST).strftime("%Y%m%d")
+    base_dt = datetime.strptime(base, "%Y%m%d")
+    for i in range(0, 8):   # 요청일 → 최대 7일 전까지 최근 공시 환율
+        d = (base_dt - timedelta(days=i)).strftime("%Y%m%d")
+        r = await _fx_on(d, crcd)
+        if r:
+            return r
+    return None
 
 
 # --------------------------------------------------------------------------- #

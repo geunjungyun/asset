@@ -51,6 +51,8 @@ async def build_pnl() -> dict:
     dom_real = _ok(dom_real) or []
     ovs_real = _ok(ovs_real) or []
     fx = _ok(fx) or 0.0
+    if not fx:   # 고시환율 조회 실패(주말/이른 아침 등) → 잔고 적용환율로 폴백
+        fx = _f(ovs_bal.get("fx_applied")) or 0.0
 
     syms: dict[str, dict] = {}
 
