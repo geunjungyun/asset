@@ -1129,14 +1129,119 @@ function renderSectorView() {
     const tbl = document.getElementById('sector-momentum');   // 표 컨테이너(재사용)
     const chips = document.getElementById('table-period-toggle');
     const det = document.getElementById('hm-detail');
+    const rep = document.getElementById('sector-report');
     const isHeat = sectorMode === 'heatmap';
     const isTable = sectorMode === 'momentum';
+    const isReport = sectorMode === 'report';
     if (heat) heat.hidden = !isHeat;
     if (hmSig) hmSig.hidden = !isHeat;
     if (det) det.hidden = !isHeat;
     if (tbl) tbl.hidden = !isTable;
     if (chips) chips.hidden = !isTable;
+    if (rep) rep.hidden = !isReport;
     if (isHeat || isTable) loadBoard();
+    if (isReport) loadReport();
+}
+
+// ── 섹터 리포트(보유 추이 + 추천) ─────────────────────────────────────── //
+let reportData = null;
+async function loadReport(force) {
+    const box = document.getElementById('sector-report');
+    if (!box) return;
+    if (reportData && !force) { renderReport(); return; }
+    box.innerHTML = '<div class="loading-row">리포트를 분석 중...</div>';
+    try {
+        reportData = await fetchJSON('/api/sectors/report');
+        renderReport();
+    } catch (e) {
+        box.innerHTML = '<div class="loading-row">리포트를 불러올 수 없습니다.</div>';
+    }
+}
+
+function _repNum(v, d = 1) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '–';
+    return (n >= 0 ? '+' : '') + n.toFixed(d);
+}
+
+const _REP_GRP = {
+    turning: { label: '돌아서는 중', cls: 'rep-up', icon: 'fa-arrow-trend-up' },
+    oversold: { label: '과매도·관망', cls: 'rep-mid', icon: 'fa-wave-square' },
+    broken: { label: '추세 훼손 경계', cls: 'rep-down', icon: 'fa-triangle-exclamation' },
+    no_data: { label: '신호 없음', cls: 'rep-na', icon: 'fa-circle-minus' },
+};
+
+function renderReport() {
+    const box = document.getElementById('sector-report');
+    if (!box || !reportData) return;
+    const d = reportData;
+
+    // 보유 종목 — 그룹별
+    const order = ['turning', 'oversold', 'broken', 'no_data'];
+    const byGrp = {};
+    (d.held || []).forEach(h => { (byGrp[h.group] = byGrp[h.group] || []).push(h); });
+    let heldHtml = '';
+    order.forEach(g => {
+        const rows = byGrp[g];
+        if (!rows || !rows.length) return;
+        const meta = _REP_GRP[g];
+        heldHtml += `<div class="rep-grp ${meta.cls}"><div class="rep-grp-h"><i class="fa-solid ${meta.icon}"></i> ${meta.label} <span class="rep-cnt">${rows.length}</span></div>`;
+        rows.forEach(h => {
+            heldHtml += `<div class="rep-item">
+                <div class="rep-item-top"><span class="rep-code">${h.code}</span>
+                    <span class="rep-nm">${h.name || ''}</span>
+                    ${h.sector ? `<span class="rep-sec">${h.sector}</span>` : ''}</div>
+                <div class="rep-reason">${h.reason || ''}</div></div>`;
+        });
+        heldHtml += `</div>`;
+    });
+
+    // 추천 후보
+    const recHtml = (d.recommendations || []).map(r => `
+        <tr><td class="rep-code">${r.code}</td>
+            <td class="rep-nm">${r.name || ''}</td>
+            <td class="rep-sec-c">${r.sector || ''}</td>
+            <td class="num ${Number(r.rs) >= 0 ? 'pos' : 'neg'}">${_repNum(r.rs)}</td>
+            <td class="num pos">${_repNum(r.accel)}</td>
+            <td class="num">${r.drank >= 0 ? '+' : ''}${r.drank ?? '–'}</td>
+            <td class="num">${r.rsi ?? '–'}</td>
+            <td class="c"><button class="rep-add" data-code="${r.code}" title="관심종목 추가">＋관심</button></td></tr>`).join('');
+
+    const notesHtml = (d.notes || []).map(n => `<li>${n}</li>`).join('');
+
+    box.innerHTML = `
+        <div class="rep-wrap">
+            <div class="rep-meta">기준: ${d.as_of || ''} · ${d.source || ''}</div>
+            <section class="rep-sec-block">
+                <h3><i class="fa-solid fa-briefcase"></i> 보유 종목 추이</h3>
+                <div class="rep-held">${heldHtml || '<div class="loading-row">보유 종목 신호 없음</div>'}</div>
+            </section>
+            <section class="rep-sec-block">
+                <h3><i class="fa-solid fa-star"></i> 추천 후보 <span class="rep-sub">RS&gt;0 · 가속&gt;0 · 순위↑ · 건전</span></h3>
+                <div class="rep-tbl-wrap"><table class="rep-tbl">
+                    <thead><tr><th>종목</th><th>이름</th><th>섹터</th><th>RS</th><th>가속</th><th>Δ순위</th><th>RSI</th><th></th></tr></thead>
+                    <tbody>${recHtml || '<tr><td colspan="8" class="loading-row">조건에 맞는 후보 없음</td></tr>'}</tbody>
+                </table></div>
+            </section>
+            <section class="rep-sec-block">
+                <h3><i class="fa-solid fa-lightbulb"></i> 종합</h3>
+                <ul class="rep-notes">${notesHtml}</ul>
+            </section>
+            <div class="rep-disc">${d.disclaimer || ''}</div>
+        </div>`;
+
+    box.querySelectorAll('.rep-add').forEach(b =>
+        b.addEventListener('click', async () => {
+            b.disabled = true; b.textContent = '추가중…';
+            try {
+                const res = await fetch('/api/watch', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: b.dataset.code }),
+                });
+                const j = await res.json();
+                b.textContent = (!res.ok || j.error) ? '실패' : '추가됨';
+            } catch (_) { b.textContent = '실패'; }
+        }));
 }
 
 // ── 보드(히트맵/표) — 둘 다 /api/sectors/board 사용 ─────────────────────── //

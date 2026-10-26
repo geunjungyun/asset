@@ -294,6 +294,7 @@
                         <div class="period-toggle view-toggle" id="sector-view-toggle">
                             <button data-sview="heatmap" class="active">히트맵</button>
                             <button data-sview="momentum">표</button>
+                            <button data-sview="report">리포트</button>
                         </div>
                         <div class="period-toggle tbl-chips" id="table-period-toggle" hidden>
                             <span class="hm-sig-lbl">기간</span>
@@ -342,6 +343,11 @@
                 <!-- 추이 그래프 -->
                 <div class="sector-grid" id="sector-grid" hidden>
                     <div class="loading-row">섹터 그래프를 불러오는 중...</div>
+                </div>
+
+                <!-- 리포트 (보유 추이 + 추천) -->
+                <div class="sector-report" id="sector-report" hidden>
+                    <div class="loading-row">리포트를 불러오는 중...</div>
                 </div>
             </section>
 
