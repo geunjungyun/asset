@@ -1172,6 +1172,27 @@ function _fmtRepDate(d) {
     const s = `${d.slice(4, 6)}/${d.slice(6, 8)}`;
     return d === reportToday ? `${s} (오늘)` : s;
 }
+function _repMonths() { return [...new Set(reportDates.map(d => d.slice(0, 6)))].sort().reverse(); }
+function _repDaysIn(mon) { return reportDates.filter(d => d.slice(0, 6) === mon).sort().reverse(); }
+function _fmtMon(m) { return `${m.slice(0, 4)}년 ${m.slice(4, 6)}월`; }
+function _fmtDay(d) { return d === reportToday ? `${d.slice(6, 8)}일 (오늘)` : `${d.slice(6, 8)}일`; }
+function _buildDatePicker() {
+    const cur = reportDate || reportToday;
+    const curMon = cur.slice(0, 6);
+    const monOpts = _repMonths().map(m => `<option value="${m}" ${m === curMon ? 'selected' : ''}>${_fmtMon(m)}</option>`).join('');
+    const dayOpts = _repDaysIn(curMon).map(d => `<option value="${d}" ${d === cur ? 'selected' : ''}>${_fmtDay(d)}</option>`).join('');
+    return `<label class="rep-datepick"><i class="fa-solid fa-calendar-day"></i>
+        <select id="rep-month">${monOpts}</select><select id="rep-day">${dayOpts}</select></label>`;
+}
+function _wireDatePicker(box) {
+    const msel = box.querySelector('#rep-month');
+    if (msel) msel.addEventListener('change', () => {
+        const days = _repDaysIn(msel.value);
+        if (days.length) { reportDate = days[0]; loadReport(); }
+    });
+    const dsel = box.querySelector('#rep-day');
+    if (dsel) dsel.addEventListener('change', () => { reportDate = dsel.value; loadReport(); });
+}
 
 function _repNum(v, d = 1) {
     const n = Number(v);
@@ -1191,16 +1212,12 @@ function renderReport() {
     if (!box || !reportData) return;
     const d = reportData;
 
-    const dateOpts = reportDates.map(x =>
-        `<option value="${x}" ${x === (reportDate || reportToday) ? 'selected' : ''}>${_fmtRepDate(x)}</option>`).join('');
-    const datePicker = `<label class="rep-datepick"><i class="fa-solid fa-calendar-day"></i>
-        <select id="rep-date">${dateOpts}</select></label>`;
+    const datePicker = _buildDatePicker();
 
     if (d.missing) {
         box.innerHTML = `<div class="rep-wrap"><div class="rep-topbar">${datePicker}</div>
-            <div class="loading-row">${_fmtRepDate(reportDate)} 저장된 리포트가 없습니다. (이 기능 적용 이후 날짜만 조회 가능)</div></div>`;
-        const sel = box.querySelector('#rep-date');
-        if (sel) sel.addEventListener('change', () => { reportDate = sel.value; loadReport(); });
+            <div class="loading-row">${_fmtRepDate(reportDate)} 저장된 리포트가 없습니다.</div></div>`;
+        _wireDatePicker(box);
         return;
     }
 
@@ -1258,8 +1275,7 @@ function renderReport() {
             <div class="rep-disc">${d.disclaimer || ''}</div>
         </div>`;
 
-    const dsel = box.querySelector('#rep-date');
-    if (dsel) dsel.addEventListener('change', () => { reportDate = dsel.value; loadReport(); });
+    _wireDatePicker(box);
 
     box.querySelectorAll('.rep-add').forEach(b =>
         b.addEventListener('click', async () => {
