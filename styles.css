@@ -1375,7 +1375,14 @@ header {
 /* 섹터 리포트 */
 .sector-report { overflow-y: auto; }
 .rep-wrap { display: flex; flex-direction: column; gap: 1.1rem; max-width: 980px; }
+.rep-topbar { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
 .rep-meta { font-size: 0.72rem; color: var(--text-muted); }
+.rep-datepick { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); }
+.rep-datepick select {
+    padding: 0.28rem 0.5rem; font-size: 0.82rem; color: var(--text-primary);
+    background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 7px; cursor: pointer;
+}
+.rep-datepick select:focus { outline: none; border-color: rgba(59,130,246,0.55); }
 .rep-sec-block > h3 { font-size: 0.95rem; margin: 0 0 0.6rem; display: flex; align-items: baseline; gap: 0.4rem; }
 .rep-sec-block > h3 .rep-sub { font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
 .rep-held { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.7rem; }

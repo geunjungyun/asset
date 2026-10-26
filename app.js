@@ -1145,17 +1145,32 @@ function renderSectorView() {
 
 // ── 섹터 리포트(보유 추이 + 추천) ─────────────────────────────────────── //
 let reportData = null;
+let reportDates = [];
+let reportToday = null;
+let reportDate = null;   // null/오늘 = 최신 라이브
 async function loadReport(force) {
     const box = document.getElementById('sector-report');
     if (!box) return;
-    if (reportData && !force) { renderReport(); return; }
     box.innerHTML = '<div class="loading-row">리포트를 분석 중...</div>';
     try {
-        reportData = await fetchJSON('/api/sectors/report');
+        if (!reportDates.length || force === 'dates') {
+            const dl = await fetchJSON('/api/sectors/report/dates');
+            reportDates = dl.dates || [];
+            reportToday = dl.today;
+            if (!reportDate) reportDate = dl.today;
+        }
+        const isToday = !reportDate || reportDate === reportToday;
+        reportData = await fetchJSON('/api/sectors/report' + (isToday ? '' : '?date=' + reportDate));
         renderReport();
     } catch (e) {
         box.innerHTML = '<div class="loading-row">리포트를 불러올 수 없습니다.</div>';
     }
+}
+
+function _fmtRepDate(d) {
+    if (!d || d.length !== 8) return d || '';
+    const s = `${d.slice(4, 6)}/${d.slice(6, 8)}`;
+    return d === reportToday ? `${s} (오늘)` : s;
 }
 
 function _repNum(v, d = 1) {
@@ -1175,6 +1190,19 @@ function renderReport() {
     const box = document.getElementById('sector-report');
     if (!box || !reportData) return;
     const d = reportData;
+
+    const dateOpts = reportDates.map(x =>
+        `<option value="${x}" ${x === (reportDate || reportToday) ? 'selected' : ''}>${_fmtRepDate(x)}</option>`).join('');
+    const datePicker = `<label class="rep-datepick"><i class="fa-solid fa-calendar-day"></i>
+        <select id="rep-date">${dateOpts}</select></label>`;
+
+    if (d.missing) {
+        box.innerHTML = `<div class="rep-wrap"><div class="rep-topbar">${datePicker}</div>
+            <div class="loading-row">${_fmtRepDate(reportDate)} 저장된 리포트가 없습니다. (이 기능 적용 이후 날짜만 조회 가능)</div></div>`;
+        const sel = box.querySelector('#rep-date');
+        if (sel) sel.addEventListener('change', () => { reportDate = sel.value; loadReport(); });
+        return;
+    }
 
     // 보유 종목 — 그룹별
     const order = ['turning', 'oversold', 'broken', 'no_data'];
@@ -1211,7 +1239,7 @@ function renderReport() {
 
     box.innerHTML = `
         <div class="rep-wrap">
-            <div class="rep-meta">기준: ${d.as_of || ''} · ${d.source || ''}</div>
+            <div class="rep-topbar">${datePicker}<span class="rep-meta">기준: ${d.as_of || ''} · ${d.source || ''}</span></div>
             <section class="rep-sec-block">
                 <h3><i class="fa-solid fa-briefcase"></i> 보유 종목 추이</h3>
                 <div class="rep-held">${heldHtml || '<div class="loading-row">보유 종목 신호 없음</div>'}</div>
@@ -1229,6 +1257,9 @@ function renderReport() {
             </section>
             <div class="rep-disc">${d.disclaimer || ''}</div>
         </div>`;
+
+    const dsel = box.querySelector('#rep-date');
+    if (dsel) dsel.addEventListener('change', () => { reportDate = dsel.value; loadReport(); });
 
     box.querySelectorAll('.rep-add').forEach(b =>
         b.addEventListener('click', async () => {
