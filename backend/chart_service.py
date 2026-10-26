@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import bisect
 import time
 from datetime import datetime, timedelta
 
@@ -227,6 +228,45 @@ async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict
     }
 
 
+# 200일선을 '곡선'으로 그릴 일봉 장기 기간(그 외는 수평 기준선=현재 MA 값)
+MA_CURVE_PERIODS = {"1M", "3M", "6M", "1Y", "5Y"}
+
+
+def _daily_closes(symbol: str) -> list[tuple]:
+    return [(ts, c) for ts, c, *_ in store.get_candles(symbol, "1d") if c]
+
+
+def _ma200_now(symbol: str) -> float | None:
+    cl = [c for _t, c in _daily_closes(symbol)]
+    if len(cl) < 20:
+        return None
+    w = cl[-200:]
+    return round(sum(w) / len(w), 4)
+
+
+def _ma200_series(symbol: str, ts_list: list[int]) -> list | None:
+    """차트 각 지점(ts)에서의 200일 이동평균(일봉 종가 기준). 곡선용."""
+    daily = _daily_closes(symbol)
+    if len(daily) < 20:
+        return None
+    dts = [t for t, _ in daily]
+    dcl = [c for _, c in daily]
+    out = []
+    for ts in ts_list:
+        k = bisect.bisect_right(dts, ts)       # ts 이하 일봉 개수
+        out.append(round(sum(dcl[max(0, k - 200):k]) / k, 4) if k >= 1 else None)
+    return out
+
+
+def _attach_ma200(res: dict, symbol: str, period: str | None = None,
+                  pts: list | None = None) -> dict:
+    """결과에 200일선 부착. 장기 일봉 기간은 곡선(ma200_series), 그 외는 수평값(ma200)."""
+    res["ma200"] = _ma200_now(symbol)
+    if pts and period in MA_CURVE_PERIODS:
+        res["ma200_series"] = _ma200_series(symbol, [t for t, _ in pts])
+    return res
+
+
 async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
                         live_price: float | None = None,
                         prev_close: float | None = None) -> dict:
@@ -237,19 +277,19 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         if period == "1D":
             res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D", live_price)
             if res is not None:
-                return _apply_prev_close(res, symbol, mkt, prev_close)
+                return _attach_ma200(_apply_prev_close(res, symbol, mkt, prev_close), symbol)
         # Nh: 최근 N시간 롤링 윈도우
         elif period in HOUR_MAP:
             anchor = int(time.time()) - HOUR_MAP[period] * 3600
             res = await _chart_intraday(symbol, exch, mkt, anchor, period, live_price)
             if res is not None:
-                return _apply_prev_close(res, symbol, mkt, prev_close)
+                return _attach_ma200(_apply_prev_close(res, symbol, mkt, prev_close), symbol)
 
         # 2D~5D: 일봉(완전) + 오늘 5분봉 결합
         elif period in MULTIDAY_DAYS:
             res = await _chart_multiday(symbol, exch, mkt, period)
             if res is not None:
-                return res
+                return _attach_ma200(res, symbol)
 
     interval, days, fmt = PERIOD_PLAN.get(period, PERIOD_PLAN["1D"])
     now = int(time.time())
@@ -263,7 +303,8 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
     # 스토어에 충분치 않으면 Yahoo 폴백(해외=티커, 국내=6자리→.KS)
     if len(pts) < 2:
         res = await market.get_stock_chart(symbol, period)
-        return _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
+        res = _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
+        return _attach_ma200(res, symbol)
 
     if len(pts) > 400:
         pts = pts[:: (len(pts) // 400) or 1]
@@ -280,4 +321,5 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
         **p,
     }
-    return _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
+    res = _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
+    return _attach_ma200(res, symbol, period, pts)

@@ -369,6 +369,14 @@ function buildChartCard(ch, isWatch) {
                 lines.push({ value: Number(ts.stop), label: '손절', kind: 'stop' });
         }
     }
+    // 200일선: 장기 일봉 기간은 곡선(ma200_series), 그 외는 수평 기준선(ma200)
+    let ma200ov = null;
+    if (showMa200 && ch) {
+        if (Array.isArray(ch.ma200_series) && ch.ma200_series.length === (ch.series || []).length)
+            ma200ov = ch.ma200_series;
+        else if (Number.isFinite(Number(ch.ma200)))
+            lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
+    }
     const card = document.createElement('div');
     card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
     card.innerHTML = `
@@ -382,7 +390,7 @@ function buildChartCard(ch, isWatch) {
             <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
             ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
         </div>
-        ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : [])}
+        ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : [], ma200ov)}
     `;
     if (isWatch) {
         const del = card.querySelector('.hc-del');
@@ -498,6 +506,11 @@ const OPT_AVG_KEY = 'assetpro.showAvg';
 let showAvg = true;
 try { const v = localStorage.getItem(OPT_AVG_KEY); if (v !== null) showAvg = v === '1'; } catch (_) {}
 
+// 차트에 200일선 표시 옵션
+const OPT_MA_KEY = 'assetpro.showMa200';
+let showMa200 = false;
+try { const v = localStorage.getItem(OPT_MA_KEY); if (v !== null) showMa200 = v === '1'; } catch (_) {}
+
 // 도달 시 매도 비율(%) — 목표(익절)/손절
 const SR_KEY = 'assetpro.sellRatios';
 let sellRatios = { target: 100, stop: 100 };
@@ -576,6 +589,16 @@ function initRebalance() {
         avgCb.addEventListener('change', () => {
             showAvg = avgCb.checked;
             try { localStorage.setItem(OPT_AVG_KEY, showAvg ? '1' : '0'); } catch (_) {}
+            if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
+        });
+    }
+
+    const maCb = document.getElementById('opt-ma200');
+    if (maCb) {
+        maCb.checked = showMa200;
+        maCb.addEventListener('change', () => {
+            showMa200 = maCb.checked;
+            try { localStorage.setItem(OPT_MA_KEY, showMa200 ? '1' : '0'); } catch (_) {}
             if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
         });
     }
@@ -819,7 +842,8 @@ function fmtNum(v, unit) {
 }
 
 // 스파크라인 SVG 생성 (선 + 영역만; 점/라벨은 HTML 오버레이)
-function sparkline(series, up, scaleMin, scaleMax) {
+// overlay: 같은 길이의 보조 시계열(200일선 곡선 등). null 값은 건너뜀.
+function sparkline(series, up, scaleMin, scaleMax, overlay) {
     const W = SPARK_W, H = SPARK_H, pad = SPARK_PAD;
     const min = Number.isFinite(scaleMin) ? scaleMin : Math.min(...series);
     const max = Number.isFinite(scaleMax) ? scaleMax : Math.max(...series);
@@ -832,6 +856,13 @@ function sparkline(series, up, scaleMin, scaleMax) {
     const color = up ? 'var(--positive)' : 'var(--negative)';
     const area = `${x(0)},${H} ${pts} ${x(n - 1)},${H}`;
     const gid = 'g' + Math.random().toString(36).slice(2, 8);
+    let maPoly = '';
+    if (Array.isArray(overlay) && overlay.length === n) {
+        const op = overlay.map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`))
+            .filter(Boolean).join(' ');
+        if (op) maPoly = `<polyline points="${op}" fill="none" stroke="#e0a43b" stroke-width="1.2"
+                vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }
     return `
         <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
             <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
@@ -839,6 +870,7 @@ function sparkline(series, up, scaleMin, scaleMax) {
                 <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
             </linearGradient></defs>
             <polygon points="${area}" fill="url(#${gid})"/>
+            ${maPoly}
             <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.0"
                 vector-effect="non-scaling-stroke"
                 stroke-linejoin="round" stroke-linecap="round"/>
@@ -879,15 +911,18 @@ function sessionMarks(times, cur) {
 // big=true 면 상세차트(큰 높이 + 축 라벨 5개)
 // refLines: [{value, label, kind:'avg'|'target'|'stop'}] (단일 숫자도 평단으로 허용)
 // vmarks: [{idx, label, kind:'open'|'close'}] 정규장 시작/종료 세로 점선(장중 차트 전용)
-function chartBlock(series, times, up, unit, big, refLines, vmarks) {
+function chartBlock(series, times, up, unit, big, refLines, vmarks, overlay) {
     if (!Array.isArray(series) || !series.length) series = [0];
     const sMin = Math.min(...series), sMax = Math.max(...series);  // 시계열 실제 최소/최대
     let lines = [];
     if (Number.isFinite(refLines)) lines = [{ value: refLines, label: '평단', kind: 'avg' }];
     else if (Array.isArray(refLines)) lines = refLines.filter(l => l && Number.isFinite(l.value));
-    // 기준선이 범위 밖이면 스케일을 확장해 선이 보이게
+    // 곡선 오버레이(200일선)가 series와 길이 다르면 무시
+    const ov = (Array.isArray(overlay) && overlay.length === series.length) ? overlay : null;
+    // 기준선/오버레이가 범위 밖이면 스케일을 확장해 선이 보이게
     let min = sMin, max = sMax;
     lines.forEach(l => { min = Math.min(min, l.value); max = Math.max(max, l.value); });
+    if (ov) ov.forEach(v => { if (v != null && Number.isFinite(v)) { min = Math.min(min, v); max = Math.max(max, v); } });
     const range = (max - min) || 1;
     const n = series.length, den = Math.max(1, n - 1);
     const W = SPARK_W, H = SPARK_H, pad = SPARK_PAD;
@@ -912,7 +947,7 @@ function chartBlock(series, times, up, unit, big, refLines, vmarks) {
     }).join('');
     return `
         <div class="${wrapCls}">
-            ${sparkline(series, up, min, max)}
+            ${sparkline(series, up, min, max, ov)}
             ${vHtml}
             ${refHtml}
             ${dot(iMax, sMax, 'max')}

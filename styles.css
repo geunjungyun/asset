@@ -1036,8 +1036,11 @@ header {
 .spark-refline.ref-stop   { border-top-color: var(--negative); opacity: 0.9; }
 .spark-reflabel.ref-target { color: var(--positive); }
 .spark-reflabel.ref-stop   { color: var(--negative); }
+.spark-refline.ref-ma200   { border-top-color: #e0a43b; border-top-style: solid; opacity: 0.85; }
+.spark-reflabel.ref-ma200  { color: #e0a43b; }
 /* 평단은 좌측, 목표·손절 라벨은 우측에 배치해 겹침 방지 */
 .spark-reflabel.ref-target, .spark-reflabel.ref-stop { left: auto; right: 3px; }
+.spark-reflabel.ref-ma200 { left: auto; right: 3px; }
 
 /* ===== 매매관리 패널 ===== */
 .ts-cell { white-space: nowrap; }
