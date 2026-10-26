@@ -254,7 +254,8 @@ def _ma200_series(symbol: str, ts_list: list[int]) -> list | None:
     out = []
     for ts in ts_list:
         k = bisect.bisect_right(dts, ts)       # ts 이하 일봉 개수
-        out.append(round(sum(dcl[max(0, k - 200):k]) / k, 4) if k >= 1 else None)
+        w = dcl[max(0, k - 200):k]
+        out.append(round(sum(w) / len(w), 4) if w else None)
     return out
 
 
