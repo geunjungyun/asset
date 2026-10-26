@@ -122,6 +122,23 @@ def closes_bulk(symbols: list[str], interval: str = "1d") -> dict[str, list[floa
     return out
 
 
+def series_bulk(symbols: list[str], interval: str = "1d") -> dict[str, list[tuple]]:
+    """여러 종목의 (ts, close) 시계열(오름차순)을 한 번에. {symbol: [(ts, close),...]}."""
+    out: dict[str, list[tuple]] = {s: [] for s in symbols}
+    if not symbols:
+        return out
+    qmarks = ",".join(["?"] * len(symbols))
+    with _db() as c:
+        rows = c.execute(
+            f"SELECT symbol, ts, close FROM candles WHERE interval=? AND symbol IN ({qmarks}) ORDER BY symbol, ts ASC",
+            [interval, *symbols],
+        ).fetchall()
+    for sym, ts, close in rows:
+        if close is not None and sym in out:
+            out[sym].append((int(ts), close))
+    return out
+
+
 def delete_candles(symbol: str, interval: str) -> None:
     with _lock, _db() as c:
         c.execute("DELETE FROM candles WHERE symbol=? AND interval=?", (symbol, interval))

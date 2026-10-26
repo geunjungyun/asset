@@ -382,6 +382,14 @@ async def sectors_report(date: str | None = None) -> dict:
     return rep
 
 
+@app.post("/api/sectors/report/backfill")
+async def sectors_report_backfill(weeks: int = 6) -> dict:
+    """최근 N주 거래일마다 섹터 리포트를 소급 생성·저장."""
+    n = await collector.backfill_reports(weeks)
+    dates = await asyncio.to_thread(candle_store.list_report_dates)
+    return {"generated": n, "dates": dates}
+
+
 @app.get("/api/sectors/report/dates")
 async def sectors_report_dates() -> dict:
     """저장된 리포트 날짜 목록(최신순) + 오늘."""

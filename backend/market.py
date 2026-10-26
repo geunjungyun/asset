@@ -635,13 +635,7 @@ def _score_asof(closes: list[float], offset: int = 0) -> float:
                      _ret(cl, _MOM_BACK["r3m"]))["score"]
 
 
-async def get_sector_board() -> dict:
-    """전체 섹터▸산업▸종목 + 신호(다기간 수익률·상대강도·Δ순위·상태). 히트맵/표용."""
-    global _board_cache
-    if _board_cache and time.time() - _board_cache["_ts"] < BOARD_TTL:
-        return _board_cache["data"]
-
-    cfg = sector_config.get_config()
+def _sector_universe(cfg: dict):
     etfs = [s.get("etf") for s in cfg["sectors"] if s.get("etf")]
     stocks: list[str] = []
     for s in cfg["sectors"]:
@@ -649,10 +643,11 @@ async def get_sector_board() -> dict:
             stocks.extend(ind.get("tickers", []))
     uniq_stocks = list(dict.fromkeys(stocks))
     allsyms = list(dict.fromkeys(["SPY", *etfs, *uniq_stocks]))
+    return allsyms, uniq_stocks
 
-    # 로컬 일봉 저장소에서 읽음(수집기가 백그라운드로 채움) — 네트워크/레이트리밋 없음, 즉시
-    series_map = await asyncio.to_thread(candle_store.closes_bulk, allsyms, "1dv")
-    names = await asyncio.to_thread(candle_store.names_bulk, uniq_stocks)
+
+def _compute_board(series_map: dict, names: dict, cfg: dict, updated_at: str, source: str) -> dict:
+    """closes_map(종가 시계열) → 섹터 보드 데이터. 라이브/소급 공용."""
     spy_score = _score_asof(series_map.get("SPY", []))
 
     def _sig(sym: str) -> dict | None:
@@ -689,7 +684,6 @@ async def get_sector_board() -> dict:
         sectors_out.append({"key": s["key"], "name": s["name"], "etf": s.get("etf"),
                             "sig": esig, "industries": inds_out})
 
-    # 섹터 Δ순위(ETF 점수 기준, 11개 중 순위 변화)
     valid = [(so["key"], so["sig"]) for so in sectors_out if so["sig"]]
     now_r = {k: i + 1 for i, (k, g) in enumerate(sorted(valid, key=lambda x: x[1]["score"], reverse=True))}
     old_r = {k: i + 1 for i, (k, g) in enumerate(sorted(valid, key=lambda x: x[1]["_score_1w"], reverse=True))}
@@ -698,7 +692,6 @@ async def get_sector_board() -> dict:
             so["rank"] = now_r.get(so["key"])
             so["drank"] = old_r.get(so["key"], 0) - now_r.get(so["key"], 0)
 
-    # 종목 Δ순위(섹터 내 순위 변화)
     for so in sectors_out:
         toks = [t for ind in so["industries"] for t in ind["stocks"] if "score" in t]
         nr = {t["code"]: i + 1 for i, t in enumerate(sorted(toks, key=lambda t: t["score"], reverse=True))}
@@ -709,15 +702,35 @@ async def get_sector_board() -> dict:
                     t["rank"] = nr.get(t["code"])
                     t["drank"] = orr.get(t["code"], 0) - nr.get(t["code"], 0)
 
-    data = {
+    return {
         "sectors": sectors_out,
         "strip_periods": STRIP_PERIODS,
         "all_periods": list(PERIOD_DAYS.keys()),
-        "updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
-        "source": "Yahoo (약 15분 지연)",
+        "updated_at": updated_at,
+        "source": source,
     }
+
+
+async def get_sector_board() -> dict:
+    """전체 섹터▸산업▸종목 + 신호(다기간 수익률·상대강도·Δ순위·상태). 히트맵/표용."""
+    global _board_cache
+    if _board_cache and time.time() - _board_cache["_ts"] < BOARD_TTL:
+        return _board_cache["data"]
+
+    cfg = sector_config.get_config()
+    allsyms, uniq_stocks = _sector_universe(cfg)
+    series_map = await asyncio.to_thread(candle_store.closes_bulk, allsyms, "1dv")
+    names = await asyncio.to_thread(candle_store.names_bulk, uniq_stocks)
+    data = _compute_board(series_map, names, cfg,
+                          datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "Yahoo (약 15분 지연)")
     _board_cache = {"_ts": time.time(), "data": data}
     return data
+
+
+def board_asof(series_ts_map: dict, names: dict, cfg: dict, cutoff_ts: int, label: str) -> dict:
+    """cutoff_ts(해당 날짜 말) 이전 종가만으로 보드 재계산(소급용)."""
+    closes = {sym: [c for ts, c in lst if ts <= cutoff_ts] for sym, lst in series_ts_map.items()}
+    return _compute_board(closes, names, cfg, label, f"Yahoo 소급({label})")
 
 
 # --------------------------------------------------------------------------- #

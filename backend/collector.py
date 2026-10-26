@@ -172,6 +172,41 @@ async def _save_daily_report() -> None:
         pass
 
 
+def _backfill_compute(series: dict, names: dict, cfg: dict, held: set, weeks: int) -> int:
+    """소급: 저장된 일봉을 거래일마다 잘라 보드 재계산→리포트 저장. (동기, 스레드에서 호출)"""
+    spy = series.get("SPY", [])
+    start = time.time() - weeks * 7 * 86400
+    dates = sorted({datetime.fromtimestamp(ts, KST).strftime("%Y%m%d")
+                    for ts, _c in spy if ts >= start})
+    cnt = 0
+    for d in dates:
+        dt = datetime.strptime(d, "%Y%m%d").replace(tzinfo=KST, hour=23, minute=59, second=59)
+        label = f"{d[:4]}-{d[4:6]}-{d[6:]}"
+        board = market.board_asof(series, names, cfg, int(dt.timestamp()), label)
+        rep = market.build_sector_report(board, held)
+        store.save_report(d, rep)
+        cnt += 1
+    return cnt
+
+
+async def backfill_reports(weeks: int = 6) -> int:
+    """최근 weeks주간 거래일마다 섹터 리포트를 소급 생성·저장."""
+    store.init_db()
+    cfg = sector_config.get_config()
+    allsyms, uniq = market._sector_universe(cfg)
+    series = await asyncio.to_thread(store.series_bulk, allsyms, "1dv")
+    names = await asyncio.to_thread(store.names_bulk, uniq)
+    held: set[str] = set()
+    if meritz_settings.enabled:
+        try:
+            for h in await chartable_holdings():
+                if h.get("symbol"):
+                    held.add(h["symbol"])
+        except Exception:  # noqa: BLE001
+            pass
+    return await asyncio.to_thread(_backfill_compute, series, names, cfg, held, weeks)
+
+
 async def run_sector_collector() -> None:
     """섹터 보드 universe 일봉을 백그라운드로 수집(Yahoo). 메리츠와 무관."""
     store.init_db()
