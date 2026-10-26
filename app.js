@@ -1144,10 +1144,19 @@ function renderSectorView() {
 }
 
 // ── 섹터 리포트(보유 추이 + 추천) ─────────────────────────────────────── //
-let reportData = null;
+let reportData = null;      // A(왼쪽)
+let reportDataB = null;     // B(오른쪽, 비교모드)
 let reportDates = [];
 let reportToday = null;
-let reportDate = null;   // null/오늘 = 최신 라이브
+let reportDate = null;      // A 날짜(null/오늘=최신)
+let reportDateB = null;     // B 날짜
+let reportCompare = false;  // 두 날짜 비교 모드
+
+function _repFetch(date) {
+    const isToday = !date || date === reportToday;
+    return fetchJSON('/api/sectors/report' + (isToday ? '' : '?date=' + date));
+}
+
 async function loadReport(force) {
     const box = document.getElementById('sector-report');
     if (!box) return;
@@ -1157,41 +1166,41 @@ async function loadReport(force) {
             const dl = await fetchJSON('/api/sectors/report/dates');
             reportDates = dl.dates || [];
             reportToday = dl.today;
-            if (!reportDate) reportDate = dl.today;
         }
-        const isToday = !reportDate || reportDate === reportToday;
-        reportData = await fetchJSON('/api/sectors/report' + (isToday ? '' : '?date=' + reportDate));
+        if (!reportDate) reportDate = reportToday;
+        if (!reportDateB) reportDateB = reportDates[1] || reportDate;  // 비교 기본: 직전 날짜
+        reportData = await _repFetch(reportDate);
+        reportDataB = reportCompare ? await _repFetch(reportDateB) : null;
         renderReport();
     } catch (e) {
         box.innerHTML = '<div class="loading-row">리포트를 불러올 수 없습니다.</div>';
     }
 }
 
-function _fmtRepDate(d) {
-    if (!d || d.length !== 8) return d || '';
-    const s = `${d.slice(4, 6)}/${d.slice(6, 8)}`;
-    return d === reportToday ? `${s} (오늘)` : s;
-}
 function _repMonths() { return [...new Set(reportDates.map(d => d.slice(0, 6)))].sort().reverse(); }
 function _repDaysIn(mon) { return reportDates.filter(d => d.slice(0, 6) === mon).sort().reverse(); }
 function _fmtMon(m) { return `${m.slice(0, 4)}년 ${m.slice(4, 6)}월`; }
 function _fmtDay(d) { return d === reportToday ? `${d.slice(6, 8)}일 (오늘)` : `${d.slice(6, 8)}일`; }
-function _buildDatePicker() {
-    const cur = reportDate || reportToday;
+function _fmtRepDate(d) { return (!d || d.length !== 8) ? (d || '') : `${d.slice(4, 6)}/${d.slice(6, 8)}`; }
+
+function _buildDatePicker(side) {
+    const cur = (side === 'B' ? reportDateB : reportDate) || reportToday;
     const curMon = cur.slice(0, 6);
+    const idM = side === 'B' ? 'rep-monthB' : 'rep-month';
+    const idD = side === 'B' ? 'rep-dayB' : 'rep-day';
     const monOpts = _repMonths().map(m => `<option value="${m}" ${m === curMon ? 'selected' : ''}>${_fmtMon(m)}</option>`).join('');
     const dayOpts = _repDaysIn(curMon).map(d => `<option value="${d}" ${d === cur ? 'selected' : ''}>${_fmtDay(d)}</option>`).join('');
     return `<label class="rep-datepick"><i class="fa-solid fa-calendar-day"></i>
-        <select id="rep-month">${monOpts}</select><select id="rep-day">${dayOpts}</select></label>`;
+        <select id="${idM}">${monOpts}</select><select id="${idD}">${dayOpts}</select></label>`;
 }
-function _wireDatePicker(box) {
-    const msel = box.querySelector('#rep-month');
-    if (msel) msel.addEventListener('change', () => {
-        const days = _repDaysIn(msel.value);
-        if (days.length) { reportDate = days[0]; loadReport(); }
-    });
-    const dsel = box.querySelector('#rep-day');
-    if (dsel) dsel.addEventListener('change', () => { reportDate = dsel.value; loadReport(); });
+function _wireDatePicker(box, side) {
+    const idM = side === 'B' ? 'rep-monthB' : 'rep-month';
+    const idD = side === 'B' ? 'rep-dayB' : 'rep-day';
+    const set = (v) => { if (side === 'B') reportDateB = v; else reportDate = v; };
+    const msel = box.querySelector('#' + idM);
+    if (msel) msel.addEventListener('change', () => { const days = _repDaysIn(msel.value); if (days.length) { set(days[0]); loadReport(); } });
+    const dsel = box.querySelector('#' + idD);
+    if (dsel) dsel.addEventListener('change', () => { set(dsel.value); loadReport(); });
 }
 
 function _repNum(v, d = 1) {
@@ -1207,21 +1216,10 @@ const _REP_GRP = {
     no_data: { label: '신호 없음', cls: 'rep-na', icon: 'fa-circle-minus' },
 };
 
-function renderReport() {
-    const box = document.getElementById('sector-report');
-    if (!box || !reportData) return;
-    const d = reportData;
-
-    const datePicker = _buildDatePicker();
-
-    if (d.missing) {
-        box.innerHTML = `<div class="rep-wrap"><div class="rep-topbar">${datePicker}</div>
-            <div class="loading-row">${_fmtRepDate(reportDate)} 저장된 리포트가 없습니다.</div></div>`;
-        _wireDatePicker(box);
-        return;
-    }
-
-    // 보유 종목 — 그룹별
+// 한 리포트의 본문 섹션(보유/추천/종합) HTML — 단일/비교 공용
+function _reportSectionsHTML(d) {
+    if (!d) return '<div class="loading-row">불러오는 중...</div>';
+    if (d.missing) return `<div class="loading-row">${_fmtRepDate(d.as_of)} 저장된 리포트가 없습니다.</div>`;
     const order = ['turning', 'oversold', 'broken', 'no_data'];
     const byGrp = {};
     (d.held || []).forEach(h => { (byGrp[h.group] = byGrp[h.group] || []).push(h); });
@@ -1240,8 +1238,6 @@ function renderReport() {
         });
         heldHtml += `</div>`;
     });
-
-    // 추천 후보
     const recHtml = (d.recommendations || []).map(r => `
         <tr><td class="rep-code">${r.code}</td>
             <td class="rep-nm">${r.name || ''}</td>
@@ -1251,31 +1247,56 @@ function renderReport() {
             <td class="num">${r.drank >= 0 ? '+' : ''}${r.drank ?? '–'}</td>
             <td class="num">${r.rsi ?? '–'}</td>
             <td class="c"><button class="rep-add" data-code="${r.code}" title="관심종목 추가">＋관심</button></td></tr>`).join('');
-
     const notesHtml = (d.notes || []).map(n => `<li>${n}</li>`).join('');
+    return `
+        <section class="rep-sec-block">
+            <h3><i class="fa-solid fa-briefcase"></i> 보유 종목 추이</h3>
+            <div class="rep-held">${heldHtml || '<div class="loading-row">보유 종목 신호 없음</div>'}</div>
+        </section>
+        <section class="rep-sec-block">
+            <h3><i class="fa-solid fa-star"></i> 추천 후보 <span class="rep-sub">RS&gt;0 · 가속&gt;0 · 순위↑ · 건전</span></h3>
+            <div class="rep-tbl-wrap"><table class="rep-tbl">
+                <thead><tr><th>종목</th><th>이름</th><th>섹터</th><th>RS</th><th>가속</th><th>Δ순위</th><th>RSI</th><th></th></tr></thead>
+                <tbody>${recHtml || '<tr><td colspan="8" class="loading-row">조건에 맞는 후보 없음</td></tr>'}</tbody>
+            </table></div>
+        </section>
+        <section class="rep-sec-block">
+            <h3><i class="fa-solid fa-lightbulb"></i> 종합</h3>
+            <ul class="rep-notes">${notesHtml}</ul>
+        </section>
+        <div class="rep-disc">${d.disclaimer || ''}</div>`;
+}
 
-    box.innerHTML = `
-        <div class="rep-wrap">
-            <div class="rep-topbar">${datePicker}<span class="rep-meta">기준: ${d.as_of || ''} · ${d.source || ''}</span></div>
-            <section class="rep-sec-block">
-                <h3><i class="fa-solid fa-briefcase"></i> 보유 종목 추이</h3>
-                <div class="rep-held">${heldHtml || '<div class="loading-row">보유 종목 신호 없음</div>'}</div>
-            </section>
-            <section class="rep-sec-block">
-                <h3><i class="fa-solid fa-star"></i> 추천 후보 <span class="rep-sub">RS&gt;0 · 가속&gt;0 · 순위↑ · 건전</span></h3>
-                <div class="rep-tbl-wrap"><table class="rep-tbl">
-                    <thead><tr><th>종목</th><th>이름</th><th>섹터</th><th>RS</th><th>가속</th><th>Δ순위</th><th>RSI</th><th></th></tr></thead>
-                    <tbody>${recHtml || '<tr><td colspan="8" class="loading-row">조건에 맞는 후보 없음</td></tr>'}</tbody>
-                </table></div>
-            </section>
-            <section class="rep-sec-block">
-                <h3><i class="fa-solid fa-lightbulb"></i> 종합</h3>
-                <ul class="rep-notes">${notesHtml}</ul>
-            </section>
-            <div class="rep-disc">${d.disclaimer || ''}</div>
-        </div>`;
+function renderReport() {
+    const box = document.getElementById('sector-report');
+    if (!box || !reportData) return;
+    const cmpBtn = `<button id="rep-cmp-btn" class="rep-cmp ${reportCompare ? 'on' : ''}">${reportCompare ? '비교 해제' : '📊 날짜 비교'}</button>`;
 
-    _wireDatePicker(box);
+    if (!reportCompare) {
+        box.innerHTML = `<div class="rep-wrap">
+            <div class="rep-topbar">${_buildDatePicker('A')}${cmpBtn}
+                <span class="rep-meta">기준: ${reportData.as_of || ''} · ${reportData.source || ''}</span></div>
+            ${_reportSectionsHTML(reportData)}</div>`;
+        _wireDatePicker(box, 'A');
+    } else {
+        box.innerHTML = `<div class="rep-wrap">
+            <div class="rep-topbar">${cmpBtn}<span class="rep-meta">두 날짜를 좌우로 비교</span></div>
+            <div class="rep-compare">
+                <div class="rep-col"><div class="rep-col-h">${_buildDatePicker('A')}
+                    <span class="rep-col-meta">${reportData.as_of || ''}</span></div>${_reportSectionsHTML(reportData)}</div>
+                <div class="rep-col"><div class="rep-col-h">${_buildDatePicker('B')}
+                    <span class="rep-col-meta">${(reportDataB || {}).as_of || ''}</span></div>${_reportSectionsHTML(reportDataB)}</div>
+            </div></div>`;
+        _wireDatePicker(box, 'A');
+        _wireDatePicker(box, 'B');
+    }
+
+    const cbtn = box.querySelector('#rep-cmp-btn');
+    if (cbtn) cbtn.addEventListener('click', () => {
+        reportCompare = !reportCompare;
+        if (reportCompare && reportDateB === reportDate) reportDateB = reportDates.find(x => x !== reportDate) || reportDate;
+        loadReport();
+    });
 
     box.querySelectorAll('.rep-add').forEach(b =>
         b.addEventListener('click', async () => {

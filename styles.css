@@ -1414,6 +1414,16 @@ header {
 .rep-notes { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; line-height: 1.6; }
 .rep-notes li { margin-bottom: 0.25rem; }
 .rep-disc { font-size: 0.7rem; color: var(--text-muted); border-top: 1px solid var(--glass-border); padding-top: 0.6rem; }
+.rep-cmp { font-size: 0.76rem; padding: 0.3rem 0.7rem; cursor: pointer; color: var(--text-primary);
+    background: rgba(59,130,246,0.16); border: 1px solid rgba(59,130,246,0.4); border-radius: 8px; }
+.rep-cmp:hover { background: rgba(59,130,246,0.28); }
+.rep-cmp.on { background: rgba(59,130,246,0.32); border-color: rgba(59,130,246,0.6); }
+.rep-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+.rep-col { min-width: 0; border: 1px solid var(--glass-border); border-radius: 12px; padding: 0.8rem; background: rgba(255,255,255,0.015); display: flex; flex-direction: column; gap: 1rem; }
+.rep-col-h { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; }
+.rep-col-meta { font-size: 0.72rem; color: var(--text-muted); }
+.rep-compare .rep-held { grid-template-columns: 1fr; }
+@media (max-width: 900px) { .rep-compare { grid-template-columns: 1fr; } }
 .hm-d-head b { font-size: 0.85rem; }
 .hm-d-sub { color: var(--text-muted); font-size: 0.7rem; margin-left: 6px; }
 .hm-d-row { margin: 5px 0; color: var(--text-main); }

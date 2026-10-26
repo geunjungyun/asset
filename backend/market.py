@@ -745,6 +745,8 @@ def build_sector_report(board: dict, held_codes: set[str]) -> dict:
     - 과매도·관망: 그 외(추세는 유지, 반등 미확정)
     추천: 미보유 & RS>0 & 가속>0 & Δ순위≥0 & 상태 '건전'(과열·약세 제외).
     """
+    # 한국 주식(숫자 코드)은 미국 섹터 유니버스 밖이라 신호 계산 불가 → 리포트에서 제외
+    held_codes = {c for c in held_codes if not str(c).isdigit()}
     sectors = board.get("sectors", [])
     # 종목코드 → 신호(+섹터명)
     bycode: dict[str, dict] = {}
