@@ -721,6 +721,114 @@ async def get_sector_board() -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# 섹터 리포트 — 보드 신호로 '보유 추이 + 추천'을 자동 생성
+# --------------------------------------------------------------------------- #
+def build_sector_report(board: dict, held_codes: set[str]) -> dict:
+    """섹터 보드 신호 → 섹터 리더보드·보유 종목 분류·추천 후보·요약.
+
+    분류 규칙(모두 보드의 신호값 기준):
+    - 추세훼손: 200일선 아래(vs200<0) 또는 상태 '약세'
+    - 반등주도: 가속>0 & Δ순위>0 & 200일선 위
+    - 과매도·관망: 그 외(추세는 유지, 반등 미확정)
+    추천: 미보유 & RS>0 & 가속>0 & Δ순위≥0 & 상태 '건전'(과열·약세 제외).
+    """
+    sectors = board.get("sectors", [])
+    # 종목코드 → 신호(+섹터명)
+    bycode: dict[str, dict] = {}
+    for s in sectors:
+        for ind in s.get("industries", []):
+            for t in ind.get("stocks", []):
+                bycode[t["code"]] = {**t, "sector": s.get("name"), "sector_key": s.get("key")}
+
+    # 1) 섹터 리더보드(score순)
+    secs = [s for s in sectors if (s.get("sig") or {}).get("score") is not None]
+    secs.sort(key=lambda s: -(s["sig"].get("score") or -999))
+    leaderboard = [{
+        "name": s.get("name"), "key": s.get("key"), "rank": s.get("rank"), "drank": s.get("drank"),
+        "rs": s["sig"].get("rs"), "accel": s["sig"].get("accel"), "state": s["sig"].get("state"),
+        "rsi": s["sig"].get("rsi"), "r1w": s["sig"].get("r1w"), "r1m": s["sig"].get("r1m"),
+    } for s in secs]
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # 2) 보유 종목 분류
+    held_rows = []
+    for code in sorted(held_codes):
+        t = bycode.get(code)
+        if not t or t.get("score") is None or t.get("no_data"):
+            held_rows.append({"code": code, "name": (t or {}).get("name", ""),
+                              "group": "no_data", "reason": "섹터 유니버스 밖(신호 없음)"})
+            continue
+        vs200, accel, drank = _f(t.get("vs_ma200")), _f(t.get("accel")), _f(t.get("drank"))
+        rsi, state, rs = t.get("rsi"), t.get("state"), _f(t.get("rs"))
+        if vs200 < 0 or state == "약세":
+            grp = "broken"
+            reason = f"200일선 {vs200:+.0f}%(이탈)·가속 {accel:+.1f}·{state} — 추세 훼손 경계"
+        elif accel > 0 and drank > 0 and vs200 >= 0:
+            grp = "turning"
+            reason = f"가속 {accel:+.1f}·Δ순위 {int(drank):+d}·200일선 {vs200:+.0f}% — 돌아서는 중"
+        else:
+            grp = "oversold"
+            reason = f"RSI {rsi}·Δ순위 {int(drank):+d}·200일선 {vs200:+.0f}% — 과매도/관망"
+        held_rows.append({
+            "code": code, "name": t.get("name", ""), "sector": t.get("sector"),
+            "rs": t.get("rs"), "accel": t.get("accel"), "drank": t.get("drank"),
+            "rsi": rsi, "state": state, "vs200": t.get("vs_ma200"), "from_high": t.get("from_high"),
+            "r1w": t.get("r1w"), "r1m": t.get("r1m"), "r3m": t.get("r3m"),
+            "group": grp, "reason": reason,
+        })
+    grp_order = {"turning": 0, "oversold": 1, "broken": 2, "no_data": 3}
+    held_rows.sort(key=lambda r: grp_order.get(r["group"], 9))
+
+    # 3) 추천 후보(미보유·RS>0·가속>0·Δ≥0·건전)
+    cand = [t for code, t in bycode.items()
+            if t.get("score") is not None and not t.get("no_data") and code not in held_codes
+            and _f(t.get("rs")) > 0 and _f(t.get("accel")) > 0 and _f(t.get("drank")) >= 0
+            and t.get("state") == "건전"]
+    cand.sort(key=lambda t: -(_f(t.get("rs")) + _f(t.get("accel")) + 0.1 * _f(t.get("drank"))))
+    recs = [{
+        "code": t["code"], "name": t.get("name", ""), "sector": t.get("sector"),
+        "rs": t.get("rs"), "accel": t.get("accel"), "drank": t.get("drank"),
+        "rsi": t.get("rsi"), "r1w": t.get("r1w"), "r1m": t.get("r1m"),
+    } for t in cand[:8]]
+
+    # 4) 요약 노트
+    notes = []
+    xlk = next((s for s in sectors if s.get("key") == "xlk"), None)
+    if xlk and (xlk.get("sig") or {}).get("score") is not None:
+        g = xlk["sig"]
+        if _f(g.get("accel")) > 0 and abs(_f(g.get("rs"))) < 1:
+            notes.append(f"기술(XLK): RS {g.get('rs')} · 가속 {_f(g.get('accel')):+.1f} · Δ {xlk.get('drank')} "
+                         f"— 과매도 반등 변곡 관찰. RS가 0을 넘어 양전환하면 섹터 리더십 복귀 트리거.")
+    broken = [r["code"] for r in held_rows if r["group"] == "broken"]
+    if broken:
+        notes.append("추세 훼손 경계(보유): " + ", ".join(broken) + " — 200일선 아래/약세. 점검 1순위.")
+    turning = [r["code"] for r in held_rows if r["group"] == "turning"]
+    if turning:
+        notes.append("돌아서는 중(보유): " + ", ".join(turning) + " — 가속·순위 상승.")
+    # 보유 섹터 집중
+    held_secs = [bycode[c]["sector"] for c in held_codes if c in bycode and bycode[c].get("sector")]
+    if held_secs:
+        from collections import Counter
+        top_sec, cnt = Counter(held_secs).most_common(1)[0]
+        if cnt >= max(2, len(held_secs) // 2):
+            notes.append(f"집중도: 보유가 '{top_sec}'에 몰려 있음({cnt}종목) — 분산 관점 점검 권장.")
+
+    return {
+        "as_of": board.get("updated_at"), "source": board.get("source"),
+        "leaderboard": leaderboard,
+        "held": held_rows,
+        "recommendations": recs,
+        "notes": notes,
+        "disclaimer": "기술적 신호 기반 참고용이며 매매 권유가 아닙니다. 투자 판단·책임은 본인에게 있습니다.",
+    }
+
+
+# --------------------------------------------------------------------------- #
 # 관심그룹 모멘텀 (사용자 정의 그룹)
 # --------------------------------------------------------------------------- #
 _wgroups_cache: dict | None = None

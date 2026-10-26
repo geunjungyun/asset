@@ -363,6 +363,21 @@ async def sectors_board() -> dict:
     return await market.get_sector_board()
 
 
+@app.get("/api/sectors/report")
+async def sectors_report() -> dict:
+    """섹터 리포트: 보유 종목 추이(신호 분류) + 추천 후보 + 요약."""
+    board = await market.get_sector_board()
+    held: set[str] = set()
+    if meritz_settings.enabled:
+        try:
+            for h in await collector.chartable_holdings():
+                if h.get("symbol"):
+                    held.add(h["symbol"])
+        except Exception:  # noqa: BLE001
+            pass
+    return market.build_sector_report(board, held)
+
+
 @app.get("/api/sectors/{key}/members")
 async def sector_members(key: str, period: str = "1W") -> dict:
     """특정 섹터의 대표 구성종목 드릴다운(기간별 등락률). 펼칠 때만 호출."""
