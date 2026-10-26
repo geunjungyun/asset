@@ -53,6 +53,7 @@ def init_db() -> None:
         c.execute("CREATE INDEX IF NOT EXISTS idx_candles_sym_int_ts ON candles(symbol, interval, ts)")
         c.execute("CREATE TABLE IF NOT EXISTS names(symbol TEXT PRIMARY KEY, name TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, val TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS reports(date TEXT PRIMARY KEY, json TEXT, created_at TEXT)")
         c.execute(
             """CREATE TABLE IF NOT EXISTS watch(
                 symbol    TEXT PRIMARY KEY,
@@ -134,6 +135,31 @@ def has_dup_dates(symbol: str, interval: str) -> bool:
         return False
     dates = {(int(t[0]) + 32400) // 86400 for t in rows}  # KST 일 단위 버킷
     return len(rows) > len(dates)
+
+
+def save_report(date: str, data: dict) -> None:
+    """섹터 리포트 일별 스냅샷 저장(같은 날이면 최신으로 덮어씀)."""
+    import datetime as _dt
+    with _lock, _db() as c:
+        c.execute("INSERT OR REPLACE INTO reports(date, json, created_at) VALUES(?,?,?)",
+                  (date, json.dumps(data, ensure_ascii=False), _dt.datetime.now().isoformat(timespec="seconds")))
+
+
+def get_report(date: str) -> dict | None:
+    with _db() as c:
+        row = c.execute("SELECT json FROM reports WHERE date=?", (date,)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row[0])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def list_report_dates(limit: int = 120) -> list[str]:
+    with _db() as c:
+        rows = c.execute("SELECT date FROM reports ORDER BY date DESC LIMIT ?", (int(limit),)).fetchall()
+    return [r[0] for r in rows]
 
 
 def meta_get(key: str) -> str | None:

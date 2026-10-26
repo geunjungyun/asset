@@ -148,17 +148,43 @@ async def _sync_sector_universe() -> int:
     return got
 
 
+async def build_sector_report_now() -> dict:
+    """현재 섹터 보드 + 실제 보유 종목으로 리포트 생성."""
+    board = await market.get_sector_board()
+    held: set[str] = set()
+    if meritz_settings.enabled:
+        try:
+            for h in await chartable_holdings():
+                if h.get("symbol"):
+                    held.add(h["symbol"])
+        except Exception:  # noqa: BLE001
+            pass
+    return market.build_sector_report(board, held)
+
+
+async def _save_daily_report() -> None:
+    """오늘 리포트 스냅샷 저장(날짜별 조회용)."""
+    try:
+        rep = await build_sector_report_now()
+        today = datetime.now(KST).strftime("%Y%m%d")
+        store.save_report(today, rep)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def run_sector_collector() -> None:
     """섹터 보드 universe 일봉을 백그라운드로 수집(Yahoo). 메리츠와 무관."""
     store.init_db()
     try:
         await _sync_sector_universe()
+        await _save_daily_report()
     except Exception:  # noqa: BLE001
         pass
     while True:
         try:
             await asyncio.sleep(SECTOR_REFRESH)
             await _sync_sector_universe()
+            await _save_daily_report()
         except asyncio.CancelledError:
             break
         except Exception:  # noqa: BLE001

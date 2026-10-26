@@ -364,18 +364,34 @@ async def sectors_board() -> dict:
 
 
 @app.get("/api/sectors/report")
-async def sectors_report() -> dict:
-    """섹터 리포트: 보유 종목 추이(신호 분류) + 추천 후보 + 요약."""
-    board = await market.get_sector_board()
-    held: set[str] = set()
-    if meritz_settings.enabled:
-        try:
-            for h in await collector.chartable_holdings():
-                if h.get("symbol"):
-                    held.add(h["symbol"])
-        except Exception:  # noqa: BLE001
-            pass
-    return market.build_sector_report(board, held)
+async def sectors_report(date: str | None = None) -> dict:
+    """섹터 리포트. date(YYYYMMDD) 미지정/오늘이면 라이브 생성+스냅샷 저장,
+    과거 날짜면 저장된 스냅샷을 반환."""
+    from meritz_client import KST as _KST
+    from datetime import datetime as _dtm
+    today = _dtm.now(_KST).strftime("%Y%m%d")
+    if date and date != today:
+        snap = await asyncio.to_thread(candle_store.get_report, date)
+        if snap:
+            return snap
+        return {"as_of": date, "held": [], "recommendations": [], "notes": [],
+                "leaderboard": [], "disclaimer": "", "missing": True}
+    # 오늘/미지정 → 라이브 생성 후 저장
+    rep = await collector.build_sector_report_now()
+    await asyncio.to_thread(candle_store.save_report, today, rep)
+    return rep
+
+
+@app.get("/api/sectors/report/dates")
+async def sectors_report_dates() -> dict:
+    """저장된 리포트 날짜 목록(최신순) + 오늘."""
+    from meritz_client import KST as _KST
+    from datetime import datetime as _dtm
+    today = _dtm.now(_KST).strftime("%Y%m%d")
+    dates = await asyncio.to_thread(candle_store.list_report_dates)
+    if today not in dates:
+        dates = [today] + dates
+    return {"today": today, "dates": dates}
 
 
 @app.get("/api/sectors/{key}/members")
