@@ -2034,6 +2034,32 @@ function renderPortfolioPie(d) {
         </div>`).join('');
 }
 
+// 종목별 총수익(실현+미실현, 원화) 다이버징 막대 — 보유·매도 모두 포함
+function renderPnlBars(d) {
+    const box = document.getElementById('pnl-bars');
+    if (!box) return;
+    const items = (d.symbols || [])
+        .map(s => ({ name: s.name || s.code || '', code: s.code, val: Number(s.total_krw) || 0, held: s.held }))
+        .filter(x => Math.abs(x.val) > 0)
+        .sort((a, b) => b.val - a.val);
+    if (!items.length) { box.innerHTML = '<div class="loading-row">데이터 없음</div>'; return; }
+    const maxAbs = Math.max(...items.map(x => Math.abs(x.val)), 1);
+    box.innerHTML = items.map(x => {
+        const w = Math.abs(x.val) / maxAbs * 50;
+        const pos = x.val >= 0;
+        const cls = pos ? 'pos' : 'neg';
+        const bar = pos
+            ? `<div class="pbar-fill pos" style="left:50%;width:${w.toFixed(2)}%"></div>`
+            : `<div class="pbar-fill neg" style="left:${(50 - w).toFixed(2)}%;width:${w.toFixed(2)}%"></div>`;
+        const sold = x.held ? '' : '<span class="pbar-sold">매도</span>';
+        return `<div class="pbar-row">
+            <span class="pbar-name">${x.name}${sold}</span>
+            <div class="pbar-track"><span class="pbar-zero"></span>${bar}</div>
+            <span class="pbar-val ${cls}">${_ps(x.val, 'KRW')}</span>
+        </div>`;
+    }).join('');
+}
+
 async function loadPnl() {
     initPnlControls();
     const tbody = document.getElementById('pnl-tbody');
@@ -2041,6 +2067,7 @@ async function loadPnl() {
         const d = await fetch('/api/ledger/pnl?_=' + Date.now()).then(r => r.json());
         renderPnlSummary(d);
         renderPortfolioPie(d);
+        renderPnlBars(d);
         const syms = d.symbols || [];
         if (tbody) tbody.innerHTML = syms.length
             ? syms.map(pnlRow).join('')

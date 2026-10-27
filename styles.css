@@ -985,6 +985,43 @@ header {
 }
 .pnl-pie-wrap #pnl-pie-legend .pie-leg-item { grid-template-columns: 14px 1fr auto auto; }
 
+/* 포트폴리오 차트 섹션 제목 */
+.pnl-chart-head {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 1.1rem 0 0.7rem;
+    color: var(--text-main);
+}
+.pnl-chart-head span { font-weight: 400; font-size: 0.78rem; color: var(--text-muted); margin-left: 0.35rem; }
+
+/* 종목별 총수익 다이버징 막대 */
+.pnl-bars { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.4rem; }
+.pbar-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 118px;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.82rem;
+}
+.pbar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pbar-sold { font-size: 0.65rem; color: var(--text-muted); margin-left: 0.3rem; }
+.pbar-track {
+    position: relative;
+    height: 16px;
+    background: rgba(148, 163, 184, 0.08);
+    border-radius: 3px;
+}
+.pbar-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border, rgba(148,163,184,0.35)); }
+.pbar-fill { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; min-width: 1px; }
+.pbar-fill.pos { background: var(--positive); }
+.pbar-fill.neg { background: var(--negative); }
+.pbar-val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pbar-val.pos { color: var(--positive); }
+.pbar-val.neg { color: var(--negative); }
+@media (max-width: 560px) {
+    .pbar-row { grid-template-columns: 92px 1fr 96px; gap: 0.4rem; font-size: 0.74rem; }
+}
+
 /* ===== 계좌 요약(2×2) + 평가금액 비중 나란히 ===== */
 .kis-overview {
     display: flex;
