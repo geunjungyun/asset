@@ -975,6 +975,16 @@ header {
 .pie-leg-val.positive { color: var(--positive); }
 .pie-leg-val.negative { color: var(--negative); }
 
+/* 포트폴리오 페이지 평가금액 비중 도넛 */
+.pnl-pie-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin: 0.6rem 0 1.4rem;
+}
+.pnl-pie-wrap #pnl-pie-legend { grid-template-columns: 14px 1fr auto auto; }
+
 /* ===== 계좌 요약(2×2) + 평가금액 비중 나란히 ===== */
 .kis-overview {
     display: flex;

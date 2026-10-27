@@ -1977,12 +1977,70 @@ function renderPnlSummary(d) {
         + `<div class="lsum-note">개설시점 누적 · 고시환율 ₩${_fmtInt(d.fx)} · ${d.as_of || ''}</div></div>`;
 }
 
+// 포트폴리오 평가금액 비중 도넛 (보유 종목만, 원화 환산 기준)
+function renderPortfolioPie(d) {
+    const svg = document.getElementById('pnl-pie');
+    const legend = document.getElementById('pnl-pie-legend');
+    if (!svg || !legend) return;
+
+    const fx = Number(d.fx) || 1;
+    const items = (d.symbols || [])
+        .filter(s => s.held && (Number(s.qty) || 0) > 0 && (Number(s.price) || 0) > 0)
+        .map(s => {
+            const krw = Number(s.qty) * Number(s.price) * (s.currency === 'USD' ? fx : 1);
+            return { name: s.name || s.code, code: s.code, val: krw, pnl: Number(s.total_krw) || 0 };
+        })
+        .filter(x => x.val > 0)
+        .sort((a, b) => b.val - a.val);
+    const total = items.reduce((s, x) => s + x.val, 0);
+
+    if (!items.length || total <= 0) {
+        svg.innerHTML = '';
+        legend.innerHTML = '<div class="loading-row">데이터 없음</div>';
+        return;
+    }
+
+    const cx = 110, cy = 110, rO = 100, rI = 60;
+    let a = -Math.PI / 2;
+    let paths = '';
+    items.forEach((x, i) => {
+        const frac = x.val / total;
+        const a1 = a + frac * Math.PI * 2;
+        const color = PIE_COLORS[i % PIE_COLORS.length];
+        x.color = color;
+        x.pct = frac * 100;
+        if (frac >= 0.9999) {
+            paths += `<circle cx="${cx}" cy="${cy}" r="${(rO + rI) / 2}" fill="none"
+                stroke="${color}" stroke-width="${rO - rI}"/>`;
+        } else {
+            paths += `<path d="${pieArc(cx, cy, rO, rI, a, a1)}" fill="${color}"
+                stroke="var(--card-bg)" stroke-width="1.5"/>`;
+        }
+        a = a1;
+    });
+
+    const center = `<text x="${cx}" y="${cy - 12}" text-anchor="middle"
+            fill="var(--text-muted)" font-size="11">평가금액</text>
+        <text x="${cx}" y="${cy + 8}" text-anchor="middle"
+            fill="var(--text-main)" font-size="14" font-weight="700">${_pm(total, 'KRW')}</text>`;
+    svg.innerHTML = paths + center;
+
+    legend.innerHTML = items.map(x => `
+        <div class="pie-leg-item">
+            <span class="pie-dot" style="background:${x.color}"></span>
+            <span class="pie-leg-name">${x.name}</span>
+            <span class="pie-leg-pct">${x.pct.toFixed(1)}%</span>
+            <span class="pie-leg-krw">${_pm(x.val, 'KRW')}</span>
+        </div>`).join('');
+}
+
 async function loadPnl() {
     initPnlControls();
     const tbody = document.getElementById('pnl-tbody');
     try {
         const d = await fetch('/api/ledger/pnl?_=' + Date.now()).then(r => r.json());
         renderPnlSummary(d);
+        renderPortfolioPie(d);
         const syms = d.symbols || [];
         if (tbody) tbody.innerHTML = syms.length
             ? syms.map(pnlRow).join('')
