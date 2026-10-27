@@ -196,6 +196,38 @@ def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas",
     return res
 
 
+async def _chart_1d_store(symbol: str, exch: str, mkt: str,
+                          live_price: float | None = None) -> dict | None:
+    """오늘 세션 전체를 5분봉 누적본으로 그린다(메리츠 40봉 한도에 묶이지 않음).
+
+    국내 세션(08:00~15:30)은 5분봉 90개라 라이브 40봉으론 다 못 담아 15분봉으로
+    성겼는데, 로컬 5분봉 저장소를 쓰면 하루 종일 5분 해상도를 유지한다.
+    저장소가 부족하면(서버가 세션 내내 안 떠 있었음) None → 라이브 40봉으로 폴백.
+    """
+    anchor = _recent_session_start(mkt)
+    now = int(time.time())
+    await _refresh(symbol, exch, mkt, "5m", anchor)
+    pts = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "5m", start_ts=anchor) if c]
+    if len(pts) < 3:
+        return None
+    price = pts[-1][1]
+    if live_price and live_price > 0:   # 현재가는 공식값으로, 선 끝을 현재가까지
+        price = float(live_price)
+        if pts[-1][0] < now:
+            pts = pts + [(now, price)]
+        else:
+            pts[-1] = (pts[-1][0], price)
+    if len(pts) > 400:
+        pts = pts[:: (len(pts) // 400) or 1]
+    p = market._period(pts, price, "%H:%M")
+    return {
+        "mode": "live", "code": symbol, "period": "1D",
+        "currency": "USD" if mkt == "overseas" else "KRW",
+        "value": round(price, 2), "source": "meritz",
+        "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), **p,
+    }
+
+
 async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict | None:
     """2D~5D: 최근 N거래일 일봉(완전) + 오늘 누적 5분봉을 이어붙여 그린다.
 
@@ -278,7 +310,10 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
     if meritz_settings.enabled:
         # 1D: 세션 시작 고정(국내 08:00/해외 09:00)
         if period == "1D":
-            res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D", live_price)
+            # 오늘 세션 전체를 5분봉 누적본으로(해상도 균일). 부족하면 라이브 40봉 폴백.
+            res = await _chart_1d_store(symbol, exch, mkt, live_price)
+            if res is None:
+                res = await _chart_intraday(symbol, exch, mkt, _recent_session_start(mkt), "1D", live_price)
             if res is not None:
                 return _attach_ma200(_apply_prev_close(res, symbol, mkt, prev_close), symbol)
         # Nh: 최근 N시간 롤링 윈도우
