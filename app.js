@@ -339,6 +339,22 @@ const CMB_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4
     '#06b6d4', '#a3e635', '#f97316', '#14b8a6', '#eab308', '#6366f1',
     '#f43f5e', '#22c55e', '#0ea5e9', '#d946ef'];
 
+// 통합 차트에서 숨긴(선택 해제된) 종목 코드
+let cmbHidden = new Set();
+try { const v = JSON.parse(localStorage.getItem('assetpro.cmbHidden') || '[]'); if (Array.isArray(v)) cmbHidden = new Set(v); } catch (_) {}
+function saveCmbHidden() { try { localStorage.setItem('assetpro.cmbHidden', JSON.stringify([...cmbHidden])); } catch (_) {} }
+function toggleCmbSymbol(code) {
+    if (cmbHidden.has(code)) cmbHidden.delete(code); else cmbHidden.add(code);
+    saveCmbHidden();
+    if (lastChartsData) renderCombinedChart(lastChartsData);
+}
+function cmbSelectAll(showAllItems) {
+    if (showAllItems) cmbHidden.clear();
+    else (lastChartsData && lastChartsData.charts || []).forEach(c => cmbHidden.add(c.code));
+    saveCmbHidden();
+    if (lastChartsData) renderCombinedChart(lastChartsData);
+}
+
 async function loadHoldingsCharts() {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
@@ -480,12 +496,13 @@ function renderCombinedChart(d) {
         return;
     }
 
-    // 색상 배정(정렬 전 순서 기준으로 고정)
-    items.forEach((a, k) => { a.color = CMB_COLORS[k % CMB_COLORS.length]; });
+    // 색상 배정(정렬 전 순서 기준으로 고정 — 숨겨도 색 안 바뀜)
+    items.forEach((a, k) => { a.color = CMB_COLORS[k % CMB_COLORS.length]; a.hidden = cmbHidden.has(a.code); });
+    const visible = items.filter(a => !a.hidden);
 
-    // 전역 Y 범위(0% 포함)
+    // 전역 Y 범위(0% 포함) — 선택된(보이는) 종목 기준으로 스케일
     let gmin = Infinity, gmax = -Infinity;
-    items.forEach(a => a.norm.forEach(v => { if (v != null) { gmin = Math.min(gmin, v); gmax = Math.max(gmax, v); } }));
+    visible.forEach(a => a.norm.forEach(v => { if (v != null) { gmin = Math.min(gmin, v); gmax = Math.max(gmax, v); } }));
     if (!Number.isFinite(gmin)) { gmin = -1; gmax = 1; }
     gmin = Math.min(gmin, 0); gmax = Math.max(gmax, 0);
     const pad = (gmax - gmin) * 0.06 || 1;
@@ -496,9 +513,9 @@ function renderCombinedChart(d) {
     const xOf = (i, n) => padX + (i / Math.max(1, n - 1)) * (W - padX * 2);
     const yOf = v => padT + (gmax - v) / range * (H - padT - padB);
 
-    // 각 종목 폴리라인(결측 구간은 끊어서)
+    // 각 종목 폴리라인(보이는 것만, 결측 구간은 끊어서)
     let polys = '';
-    items.forEach(a => {
+    visible.forEach(a => {
         const n = a.norm.length;
         let seg = [], segs = [];
         a.norm.forEach((v, i) => {
@@ -521,15 +538,19 @@ function renderCombinedChart(d) {
     // x축: 가장 긴 times 사용
     const longest = items.reduce((best, a) => a.times.length > best.length ? a.times : best, []);
 
-    // 범례: 현재 수익률 내림차순
-    const leg = [...items].sort((x, y) => y.last - x.last).map(a => `
-        <span class="cmb-leg-item" data-code="${a.code}">
+    // 범례: 전체 표시(클릭=켜기/끄기). 보이는 건 수익률 내림차순, 숨긴 건 뒤로.
+    const leg = [...items]
+        .sort((x, y) => (x.hidden - y.hidden) || (y.last - x.last))
+        .map(a => `
+        <span class="cmb-leg-item${a.hidden ? ' off' : ''}" data-code="${a.code}" title="클릭: 차트에서 켜기/끄기">
             <span class="cmb-dot" style="background:${a.color}"></span>
             <span class="cmb-leg-name">${a.isWatch ? '<i class="fa-solid fa-star cmb-star"></i>' : ''}${a.name}</span>
             <span class="cmb-leg-val ${a.last >= 0 ? 'positive' : 'negative'}">${a.last >= 0 ? '+' : ''}${a.last.toFixed(2)}%</span>
         </span>`).join('');
 
     const zeroTop = (yZero / H * 100).toFixed(1);
+    const emptyMsg = visible.length ? '' :
+        '<div class="cmb-empty">표시할 종목을 범례에서 선택하세요</div>';
     grid.innerHTML = `
         <div class="cmb-wrap">
             <div class="cmb-chart-box">
@@ -537,9 +558,16 @@ function renderCombinedChart(d) {
                 <span class="cmb-y cmb-y-top">${gmax >= 0 ? '+' : ''}${gmax.toFixed(1)}%</span>
                 <span class="cmb-y cmb-y-zero" style="top:${zeroTop}%">0%</span>
                 <span class="cmb-y cmb-y-bot">${gmin.toFixed(1)}%</span>
+                ${emptyMsg}
             </div>
             <div class="cmb-axis">${axisLabels(longest, 6)}</div>
-            <div class="cmb-note">기준시점(기간 시작) 대비 수익률 % · 실선=보유, 점선=관심종목</div>
+            <div class="cmb-note">
+                <span>기준시점(기간 시작) 대비 수익률 % · 실선=보유, 점선=관심종목 · 범례 클릭=선택</span>
+                <span class="cmb-sel">
+                    <button type="button" data-cmb-act="all">전체</button>
+                    <button type="button" data-cmb-act="none">해제</button>
+                </span>
+            </div>
             <div class="cmb-legend">${leg}</div>
         </div>`;
 }
@@ -619,6 +647,15 @@ function initHoldingToggle() {
             if (lastChartsData) renderHoldingsChartsGrid(lastChartsData); else loadHoldingsCharts();
         });
     }
+    // 통합 차트 범례 클릭(종목 켜기/끄기) + 전체/해제 — 그리드는 재렌더돼도 유지되므로 위임
+    const grid = document.getElementById('holdings-charts-grid');
+    if (grid) grid.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-cmb-act]');
+        if (act) { cmbSelectAll(act.dataset.cmbAct === 'all'); return; }
+        const item = e.target.closest('.cmb-leg-item');
+        if (item && item.dataset.code) toggleCmbSymbol(item.dataset.code);
+    });
+
     updateChartModeControls();
     scheduleHoldingRefresh();
 }
