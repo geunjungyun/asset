@@ -232,19 +232,31 @@ async def _chart_store_window(symbol: str, exch: str, mkt: str, anchor: int,
         pts = p5
     if len(pts) < 3:
         return None
-    pts = _resample(pts, BAR_SEC.get(bar, 300))            # 선택 봉 간격으로
-    if len(pts) < 2:
-        return None
+    # 현재가(공식값)를 최신 점에 반영 — 고점/저점 판정에도 포함
     price = pts[-1][1]
-    if live_price and live_price > 0:   # 현재가는 공식값으로, 선 끝을 현재가까지
+    if live_price and live_price > 0:
         price = float(live_price)
         if pts[-1][0] < now:
             pts = pts + [(now, price)]
         else:
             pts[-1] = (pts[-1][0], price)
-    if len(pts) > 400:
-        pts = pts[:: (len(pts) // 400) or 1]
-    p = market._period(pts, price, "%H:%M")
+    # 리샘플 전 '최정밀' 시계열에서 진짜 고점·저점을 구해둔다(봉 크기와 무관하게 동일 시점)
+    hi = max(pts, key=lambda x: x[1])
+    lo = min(pts, key=lambda x: x[1])
+    last = pts[-1]
+    disp = _resample(pts, BAR_SEC.get(bar, 300))           # 선택 봉 간격으로
+    if len(disp) > 400:
+        disp = disp[:: (len(disp) // 400) or 1]
+    # 리샘플·다운샘플로 사라졌을 수 있는 고점/저점/현재점을 같은 시점에 강제 포함
+    present = {t for t, _ in disp}
+    for ex in (hi, lo, last):
+        if ex[0] not in present:
+            disp.append(ex)
+            present.add(ex[0])
+    disp.sort(key=lambda x: x[0])
+    if len(disp) < 2:
+        return None
+    p = market._period(disp, price, "%H:%M")
     return {
         "mode": "live", "code": symbol, "period": period_label,
         "currency": "USD" if mkt == "overseas" else "KRW",
