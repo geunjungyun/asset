@@ -1039,6 +1039,20 @@ async def get_stock_chart(code: str, period: str) -> dict:
     }
 
 
+async def get_intraday_pts(code: str, interval: str = "5m", rng: str = "5d") -> list[tuple]:
+    """Yahoo 장중 원시 포인트 [(ts, close), ...]. 티커 해석(숫자=.KS/.KQ, 영문=그대로). 실패 시 []."""
+    code = (code or "").strip()
+    if not code:
+        return []
+    candidates = ([code + ".KS", code + ".KQ"] if code.isdigit() else [code])
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        for sym in candidates:
+            _m, p = await _fetch_chart(client, sym, interval, rng)
+            if p:
+                return p
+    return []
+
+
 def _mock_stock_chart(code: str, period: str, fmt: str) -> dict:
     n = {"1D": 78, "2D": 120, "3D": 160, "4D": 200, "5D": 240,
          "1W": 65, "1M": 22, "3M": 66, "6M": 132, "1Y": 252, "5Y": 260}.get(period, 66)

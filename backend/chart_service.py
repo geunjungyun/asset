@@ -283,7 +283,18 @@ async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict
     # 5분봉이 시작되기 전까지의 일봉 중 최근 N개
     daily = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "1d") if c and ts < cutoff][-days:]
 
-    combined = daily + pts_5m
+    # 과거 구간이 일봉뿐(관심종목 신규 추가 등 누적본 부족)이면 Yahoo 5분봉으로 메움.
+    # 보유종목은 이미 5분봉이 과거까지 쌓여 cutoff가 과거라 Yahoo 구간이 비어 영향 없음.
+    pre = daily
+    try:
+        y = await market.get_intraday_pts(symbol)  # 5m/5d
+        y_pre = [(t, c) for t, c in y if t is not None and start <= t < cutoff]
+        if len(y_pre) > len(daily):
+            pre = y_pre
+    except Exception:
+        pass
+
+    combined = pre + pts_5m
     if len(combined) < 2:
         return None  # → 상위에서 Yahoo 폴백
 
