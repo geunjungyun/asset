@@ -64,9 +64,13 @@ async def sync_watch() -> None:
 
 async def _collect_minutes(sym: str, exch: str, mkt: str) -> None:
     try:
-        bars = (await meritz.overseas_candles(sym, exch, "minutes", 300)
-                if mkt == "overseas"
-                else await meritz.domestic_candles(sym, "minutes", 300))
+        # 1분봉(1h~1D 차트용) + 5분봉(2D~5D 멀티데이용) 둘 다 누적. held+watch만.
+        if mkt == "overseas":
+            store.upsert_candles(sym, "1m", await meritz.overseas_candles(sym, exch, "minutes", 60))
+            bars = await meritz.overseas_candles(sym, exch, "minutes", 300)
+        else:
+            store.upsert_candles(sym, "1m", await meritz.domestic_candles(sym, "minutes", 60))
+            bars = await meritz.domestic_candles(sym, "minutes", 300)
         store.upsert_candles(sym, "5m", bars)
     except meritz.MeritzError:
         pass
