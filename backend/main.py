@@ -146,7 +146,7 @@ async def holding_chart(code: str, period: str = "realtime") -> dict:
 
 
 @app.get("/api/account/holdings-charts")
-async def holdings_charts(period: str = "realtime") -> dict:
+async def holdings_charts(period: str = "realtime", bar: str = "5m") -> dict:
     """보유 계좌 전체 종목의 차트를 한 번에.
 
     메리츠 연동 시: 해외+국내 보유종목을 메리츠 캔들(로컬 누적본, 24h)로. 실패 시 Yahoo 폴백.
@@ -168,13 +168,13 @@ async def holdings_charts(period: str = "realtime") -> dict:
                     pc = q.get("prev_close") or h.get("prdy_close")
                     return await chart_service.holding_chart(
                         h["symbol"], h["exch"], h["market"], period,
-                        live_price=lp, prev_close=pc)
+                        live_price=lp, prev_close=pc, bar=bar)
 
             charts = await asyncio.gather(*[_one(h) for h in holdings])
             for ch, h in zip(charts, holdings):
                 ch["name"] = h.get("name", ch.get("code"))
                 ch["kind"] = "held"
-            charts = list(charts) + await _watch_charts(period)
+            charts = list(charts) + await _watch_charts(period, bar)
             return {"period": period, "currency": "USD", "charts": charts}
 
     # 폴백: mock(또는 KIS) 보유종목 → Yahoo
@@ -192,7 +192,7 @@ async def holdings_charts(period: str = "realtime") -> dict:
     return {"period": period, "currency": bal.get("currency", "KRW"), "charts": charts}
 
 
-async def _watch_charts(period: str) -> list[dict]:
+async def _watch_charts(period: str, bar: str = "5m") -> list[dict]:
     """관심종목(watch) 차트. 잔고가 없어 현재가·전일종가는 메리츠 캔들에서 산출."""
     if not meritz_settings.enabled:
         return []
@@ -206,7 +206,7 @@ async def _watch_charts(period: str) -> list[dict]:
             q = await meritz_client.day_quote(w["symbol"], w["exch"], w["market"])
             ch = await chart_service.holding_chart(
                 w["symbol"], w["exch"], w["market"], period,
-                live_price=q.get("price"), prev_close=q.get("prev_close"))
+                live_price=q.get("price"), prev_close=q.get("prev_close"), bar=bar)
             ch["name"] = w.get("name") or ch.get("code")
             ch["kind"] = "watch"
             return ch

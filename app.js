@@ -319,6 +319,10 @@ function renderHoldingsPie(holdings) {
 let holdingPeriod = '1D';
 let holdingTimer = null;
 
+// 봉 간격(1h~1일 차트): 1m | 5m | 15m. 패턴 읽기엔 5분 기본.
+let barSize = '5m';
+try { const v = localStorage.getItem('assetpro.barSize'); if (v) barSize = v; } catch (_) {}
+
 // 장중(분봉) 기간 여부: 1h~12h 또는 1일. 정규장 시작/종료 세로 표기 대상.
 function isIntradayPeriod() {
     return /^\d{1,2}h$/.test(holdingPeriod) || holdingPeriod === '1D';
@@ -329,9 +333,11 @@ let lastChartsData = null;  // 마지막 조회 결과(목표/손절 변경 시 
 async function loadHoldingsCharts() {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
+    const bt = document.getElementById('bar-toggle');
+    if (bt) bt.hidden = !(isIntradayPeriod() && rightView === 'charts');  // 봉 토글은 장중 기간만
     const reqPeriod = holdingPeriod;  // 요청 시점의 기간
     try {
-        const d = await fetchJSON(`/api/account/holdings-charts?period=${reqPeriod}`);
+        const d = await fetchJSON(`/api/account/holdings-charts?period=${reqPeriod}&bar=${barSize}`);
         if (reqPeriod !== holdingPeriod) return;  // 더 최신 기간 요청이 있으면 이 응답은 버림(레이스 방지)
         lastChartsData = d;
         renderHoldingsChartsGrid(d);
@@ -465,6 +471,20 @@ function initHoldingToggle() {
         loadHoldingsCharts();
         scheduleHoldingRefresh();
     });
+    // 봉 간격 토글(1분/5분/15분)
+    const bt = document.getElementById('bar-toggle');
+    if (bt) {
+        bt.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.bar === barSize));
+        bt.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-bar]');
+            if (!btn) return;
+            bt.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            barSize = btn.dataset.bar;
+            try { localStorage.setItem('assetpro.barSize', barSize); } catch (_) {}
+            loadHoldingsCharts();
+        });
+    }
     scheduleHoldingRefresh();
 }
 
@@ -555,6 +575,8 @@ function initRebalance() {
         if (wab) wab.style.display = charts ? '' : 'none';
         const optw = document.getElementById('chart-opts');
         if (optw) optw.style.display = charts ? '' : 'none';
+        const bt = document.getElementById('bar-toggle');
+        if (bt) bt.hidden = !(charts && isIntradayPeriod());
         document.getElementById('right-title').textContent = RIGHT_TITLES[rightView] || '보유종목 차트';
         if (rightView === 'rebalance') renderRebalance();
         if (rightView === 'trade') renderTradeMgmt();

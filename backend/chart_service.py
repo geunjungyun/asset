@@ -198,13 +198,26 @@ def _apply_prev_close(res: dict, symbol: str, mkt: str = "overseas",
     return res
 
 
+BAR_SEC = {"1m": 60, "5m": 300, "15m": 900}
+
+
+def _resample(pts: list, bar_sec: int) -> list:
+    """(ts, close) 시계열을 bar_sec 버킷으로 리샘플(각 버킷의 마지막 종가)."""
+    if bar_sec <= 60:
+        return pts
+    buckets: dict[int, tuple] = {}
+    for ts, c in pts:
+        buckets[ts // bar_sec] = (ts, c)   # 같은 버킷이면 마지막 봉이 대표
+    return [buckets[b] for b in sorted(buckets)]
+
+
 async def _chart_store_window(symbol: str, exch: str, mkt: str, anchor: int,
-                              period_label: str,
-                              live_price: float | None = None) -> dict | None:
+                              period_label: str, live_price: float | None = None,
+                              bar: str = "5m") -> dict | None:
     """anchor~현재 구간을 로컬 분봉 누적본으로 그린다(40봉 한도에 안 묶임).
 
     1분봉은 추가/기동 이후로만 누적되므로, 이른 구간은 5분봉으로 채우고 1분봉이 있는
-    최근 구간만 1분 해상도로 병합한다(시간이 지나며 전부 1분봉으로 채워짐).
+    최근 구간만 1분 해상도로 병합한다. 그 뒤 선택한 봉 간격(bar: 1m/5m/15m)으로 리샘플.
     둘 다 부족하면(3봉 미만) None → 상위에서 라이브 40봉으로 폴백.
     """
     now = int(time.time())
@@ -218,6 +231,9 @@ async def _chart_store_window(symbol: str, exch: str, mkt: str, anchor: int,
     else:
         pts = p5
     if len(pts) < 3:
+        return None
+    pts = _resample(pts, BAR_SEC.get(bar, 300))            # 선택 봉 간격으로
+    if len(pts) < 2:
         return None
     price = pts[-1][1]
     if live_price and live_price > 0:   # 현재가는 공식값으로, 선 끝을 현재가까지
@@ -313,14 +329,15 @@ def _attach_ma200(res: dict, symbol: str, period: str | None = None,
 
 async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
                         live_price: float | None = None,
-                        prev_close: float | None = None) -> dict:
+                        prev_close: float | None = None,
+                        bar: str = "5m") -> dict:
     is_intraday = period == "1D" or period in HOUR_MAP  # 1h~1D 는 전일종가 기준 등락폭
 
     if meritz_settings.enabled:
         # 1D: 세션 시작 고정(국내 08:00/해외 09:00) — 1분봉 누적본(해상도 균일)
         if period == "1D":
             anc = _recent_session_start(mkt)
-            res = await _chart_store_window(symbol, exch, mkt, anc, "1D", live_price)
+            res = await _chart_store_window(symbol, exch, mkt, anc, "1D", live_price, bar)
             if res is None:   # 저장소 부족 → 라이브 40봉
                 res = await _chart_intraday(symbol, exch, mkt, anc, "1D", live_price)
             if res is not None:
@@ -328,7 +345,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         # Nh: 최근 N시간 롤링 윈도우 — 1분봉 누적본(+5분봉 이른 구간), 부족하면 라이브 40봉
         elif period in HOUR_MAP:
             anchor = int(time.time()) - HOUR_MAP[period] * 3600
-            res = await _chart_store_window(symbol, exch, mkt, anchor, period, live_price)
+            res = await _chart_store_window(symbol, exch, mkt, anchor, period, live_price, bar)
             if res is None:
                 res = await _chart_intraday(symbol, exch, mkt, anchor, period, live_price)
             if res is not None:
