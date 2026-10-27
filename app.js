@@ -330,11 +330,20 @@ function isIntradayPeriod() {
 
 let lastChartsData = null;  // 마지막 조회 결과(목표/손절 변경 시 재조회 없이 선만 갱신)
 
+// 차트 보기 모드: individual(개별 카드) | combined(한 차트에 전부 겹쳐 비교)
+let holdingChartMode = 'individual';
+try { const v = localStorage.getItem('assetpro.chartMode'); if (v) holdingChartMode = v; } catch (_) {}
+
+// 통합 차트 색상 팔레트(종목 구분용)
+const CMB_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
+    '#06b6d4', '#a3e635', '#f97316', '#14b8a6', '#eab308', '#6366f1',
+    '#f43f5e', '#22c55e', '#0ea5e9', '#d946ef'];
+
 async function loadHoldingsCharts() {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
     const bt = document.getElementById('bar-toggle');
-    if (bt) bt.hidden = !(isIntradayPeriod() && rightView === 'charts');  // 봉 토글은 장중 기간만
+    if (bt) bt.hidden = !(isIntradayPeriod() && rightView === 'charts' && holdingChartMode !== 'combined');  // 봉 토글은 개별·장중만
     const reqPeriod = holdingPeriod;  // 요청 시점의 기간
     try {
         const d = await fetchJSON(`/api/account/holdings-charts?period=${reqPeriod}&bar=${barSize}`);
@@ -408,6 +417,14 @@ function buildChartCard(ch, isWatch) {
 function renderHoldingsChartsGrid(d) {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid || !d) return;
+
+    if (holdingChartMode === 'combined') {
+        grid.classList.add('cmb-mode');
+        renderCombinedChart(d);
+        return;
+    }
+    grid.classList.remove('cmb-mode');
+
     const all = d.charts || [];
     const heldCharts = all.filter(ch => ch.kind !== 'watch');
     const watchCharts = all.filter(ch => ch.kind === 'watch');
@@ -423,6 +440,108 @@ function renderHoldingsChartsGrid(d) {
 
     // 관심종목은 ★배지 카드로 구분(별도 구분줄 없이 보유종목 뒤에 이어 배치)
     watchCharts.forEach(ch => grid.appendChild(buildChartCard(ch, true)));
+}
+
+// 시계열을 기준시점(기간 시작) 대비 수익률 %로 정규화. 겹쳐 비교하기 위함.
+function normSeries(s) {
+    const arr = (s || []).map(v => (v == null || !Number.isFinite(Number(v))) ? null : Number(v));
+    let base = null;
+    for (const v of arr) { if (v != null && v > 0) { base = v; break; } }
+    if (base == null) return null;
+    return arr.map(v => (v == null) ? null : (v / base - 1) * 100);
+}
+
+// 통합 비교 차트: 보유+관심 종목을 한 차트에 수익률% 기준으로 겹쳐 그림
+function renderCombinedChart(d) {
+    const grid = document.getElementById('holdings-charts-grid');
+    if (!grid) return;
+
+    // 보유종목 먼저(보유 순서), 관심종목 뒤 — 색상 배정 안정화
+    const raw = d.charts || [];
+    const held = sortByHoldingOrder(raw.filter(ch => ch.kind !== 'watch'), ch => ch.code);
+    const watch = raw.filter(ch => ch.kind === 'watch');
+    const ordered = held.concat(watch);
+
+    const items = ordered.map(ch => {
+        const norm = normSeries(ch.series);
+        if (!norm) return null;
+        const vals = norm.filter(v => v != null);
+        if (vals.length < 2) return null;
+        return {
+            code: ch.code, name: ch.name || ch.code,
+            isWatch: ch.kind === 'watch',
+            norm, times: ch.times || [],
+            last: vals[vals.length - 1],
+        };
+    }).filter(Boolean);
+
+    if (!items.length) {
+        grid.innerHTML = '<div class="loading-row">비교할 데이터가 없습니다.</div>';
+        return;
+    }
+
+    // 색상 배정(정렬 전 순서 기준으로 고정)
+    items.forEach((a, k) => { a.color = CMB_COLORS[k % CMB_COLORS.length]; });
+
+    // 전역 Y 범위(0% 포함)
+    let gmin = Infinity, gmax = -Infinity;
+    items.forEach(a => a.norm.forEach(v => { if (v != null) { gmin = Math.min(gmin, v); gmax = Math.max(gmax, v); } }));
+    if (!Number.isFinite(gmin)) { gmin = -1; gmax = 1; }
+    gmin = Math.min(gmin, 0); gmax = Math.max(gmax, 0);
+    const pad = (gmax - gmin) * 0.06 || 1;
+    gmin -= pad; gmax += pad;
+    const range = (gmax - gmin) || 1;
+
+    const W = 1000, H = 340, padX = 6, padT = 8, padB = 8;
+    const xOf = (i, n) => padX + (i / Math.max(1, n - 1)) * (W - padX * 2);
+    const yOf = v => padT + (gmax - v) / range * (H - padT - padB);
+
+    // 각 종목 폴리라인(결측 구간은 끊어서)
+    let polys = '';
+    items.forEach(a => {
+        const n = a.norm.length;
+        let seg = [], segs = [];
+        a.norm.forEach((v, i) => {
+            if (v == null) { if (seg.length) segs.push(seg); seg = []; }
+            else seg.push(`${xOf(i, n).toFixed(1)},${yOf(v).toFixed(1)}`);
+        });
+        if (seg.length) segs.push(seg);
+        segs.forEach(s => {
+            polys += `<polyline points="${s.join(' ')}" fill="none" stroke="${a.color}"
+                stroke-width="${a.isWatch ? 1.1 : 1.6}" ${a.isWatch ? 'stroke-dasharray="5 3"' : ''}
+                vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`;
+        });
+    });
+
+    const yZero = yOf(0);
+    const zero = `<line x1="${padX}" y1="${yZero.toFixed(1)}" x2="${W - padX}" y2="${yZero.toFixed(1)}"
+        stroke="var(--border, rgba(148,163,184,.45))" stroke-width="1" stroke-dasharray="3 3"
+        vector-effect="non-scaling-stroke"/>`;
+
+    // x축: 가장 긴 times 사용
+    const longest = items.reduce((best, a) => a.times.length > best.length ? a.times : best, []);
+
+    // 범례: 현재 수익률 내림차순
+    const leg = [...items].sort((x, y) => y.last - x.last).map(a => `
+        <span class="cmb-leg-item" data-code="${a.code}">
+            <span class="cmb-dot" style="background:${a.color}"></span>
+            <span class="cmb-leg-name">${a.isWatch ? '<i class="fa-solid fa-star cmb-star"></i>' : ''}${a.name}</span>
+            <span class="cmb-leg-val ${a.last >= 0 ? 'positive' : 'negative'}">${a.last >= 0 ? '+' : ''}${a.last.toFixed(2)}%</span>
+        </span>`).join('');
+
+    const zeroTop = (yZero / H * 100).toFixed(1);
+    grid.innerHTML = `
+        <div class="cmb-wrap">
+            <div class="cmb-chart-box">
+                <svg class="cmb-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${zero}${polys}</svg>
+                <span class="cmb-y cmb-y-top">${gmax >= 0 ? '+' : ''}${gmax.toFixed(1)}%</span>
+                <span class="cmb-y cmb-y-zero" style="top:${zeroTop}%">0%</span>
+                <span class="cmb-y cmb-y-bot">${gmin.toFixed(1)}%</span>
+            </div>
+            <div class="cmb-axis">${axisLabels(longest, 6)}</div>
+            <div class="cmb-note">기준시점(기간 시작) 대비 수익률 % · 실선=보유, 점선=관심종목</div>
+            <div class="cmb-legend">${leg}</div>
+        </div>`;
 }
 
 async function addWatch() {
@@ -485,7 +604,32 @@ function initHoldingToggle() {
             loadHoldingsCharts();
         });
     }
+    // 개별 ↔ 통합 보기 토글
+    const mt = document.getElementById('hc-mode-toggle');
+    if (mt) {
+        mt.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.mode === holdingChartMode));
+        mt.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-mode]');
+            if (!btn || btn.dataset.mode === holdingChartMode) return;
+            mt.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            holdingChartMode = btn.dataset.mode;
+            try { localStorage.setItem('assetpro.chartMode', holdingChartMode); } catch (_) {}
+            updateChartModeControls();
+            if (lastChartsData) renderHoldingsChartsGrid(lastChartsData); else loadHoldingsCharts();
+        });
+    }
+    updateChartModeControls();
     scheduleHoldingRefresh();
+}
+
+// 통합 모드에서는 개별 전용 옵션(평단/목표·손절/200일선, 봉 간격)을 숨김
+function updateChartModeControls() {
+    const combined = holdingChartMode === 'combined' && rightView === 'charts';
+    const opts = document.getElementById('chart-opts');
+    if (opts) opts.style.display = (rightView === 'charts' && !combined) ? '' : 'none';
+    const bt = document.getElementById('bar-toggle');
+    if (bt) bt.hidden = !(rightView === 'charts' && !combined && isIntradayPeriod());
 }
 
 // 장중 기간(1h~5D)일 때 주기 갱신: 장중 10초, 장 밖 ≈60초
@@ -571,12 +715,11 @@ function initRebalance() {
         document.getElementById('rebalance-panel').hidden = rightView !== 'rebalance';
         document.getElementById('trade-panel').hidden = rightView !== 'trade';
         document.getElementById('hd-period-toggle').style.display = charts ? '' : 'none';
+        const mt = document.getElementById('hc-mode-toggle');
+        if (mt) mt.style.display = charts ? '' : 'none';
         const wab = document.getElementById('watch-addbar');
         if (wab) wab.style.display = charts ? '' : 'none';
-        const optw = document.getElementById('chart-opts');
-        if (optw) optw.style.display = charts ? '' : 'none';
-        const bt = document.getElementById('bar-toggle');
-        if (bt) bt.hidden = !(charts && isIntradayPeriod());
+        updateChartModeControls();  // chart-opts / bar-toggle 가시성(통합 모드 반영)
         document.getElementById('right-title').textContent = RIGHT_TITLES[rightView] || '보유종목 차트';
         if (rightView === 'rebalance') renderRebalance();
         if (rightView === 'trade') renderTradeMgmt();

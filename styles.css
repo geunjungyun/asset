@@ -760,6 +760,65 @@ header {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 1rem;
 }
+.hc-grid.cmb-mode { display: block; }
+
+/* ===== 통합 비교 차트(수익률% 겹침) ===== */
+.cmb-wrap {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 0.9rem 1rem 0.8rem;
+}
+.cmb-chart-box {
+    position: relative;
+    height: 340px;
+    margin: 0 0 0.2rem 44px;   /* 왼쪽 Y라벨 공간 */
+}
+.cmb-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.cmb-y {
+    position: absolute;
+    left: -44px;
+    width: 40px;
+    text-align: right;
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+.cmb-y-top { top: 0; color: var(--positive); }
+.cmb-y-bot { top: 100%; color: var(--negative); }
+.cmb-y-zero { color: var(--text-muted); }
+.cmb-axis {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem 44px;
+}
+.cmb-note { font-size: 0.72rem; color: var(--text-muted); margin: 0.1rem 0 0.7rem 44px; }
+.cmb-legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.3rem 0.8rem;
+    margin-left: 44px;
+}
+.cmb-leg-item {
+    display: grid;
+    grid-template-columns: 12px 1fr auto;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+}
+.cmb-dot { width: 11px; height: 11px; border-radius: 3px; }
+.cmb-leg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmb-star { color: #f5b301; font-size: 0.7rem; margin-right: 0.25rem; }
+.cmb-leg-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cmb-leg-val.positive { color: var(--positive); }
+.cmb-leg-val.negative { color: var(--negative); }
+@media (max-width: 560px) {
+    .cmb-chart-box { height: 260px; }
+}
 .hc-card {
     background: rgba(255,255,255,0.02);
     border: 1px solid var(--glass-border);
