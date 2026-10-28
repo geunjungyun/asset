@@ -2318,7 +2318,7 @@ function renderPnlBars(d) {
     const box = document.getElementById('pnl-bars');
     if (!box) return;
     const items = (d.symbols || [])
-        .map(s => ({ name: s.name || s.code || '', code: s.code, val: Number(s.total_krw) || 0, held: s.held }))
+        .map(s => ({ name: s.name || s.code || '', code: s.code, val: Number(s.total_krw) || 0, pct: s.total_pct, held: s.held }))
         .filter(x => Math.abs(x.val) > 0)
         .sort((a, b) => b.val - a.val);
     if (!items.length) { box.innerHTML = '<div class="loading-row">데이터 없음</div>'; return; }
@@ -2334,7 +2334,7 @@ function renderPnlBars(d) {
         return `<div class="pbar-row">
             <span class="pbar-name">${x.name}${sold}</span>
             <div class="pbar-track"><span class="pbar-zero"></span>${bar}</div>
-            <span class="pbar-val ${cls}">${_ps(x.val, 'KRW')}</span>
+            <span class="pbar-val ${cls}">${_ps(x.val, 'KRW')}${x.pct != null ? `<span class="pbar-pct">${_pp(x.pct)}</span>` : ''}</span>
         </div>`;
     }).join('');
 }

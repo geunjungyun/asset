@@ -129,6 +129,15 @@ async def build_pnl() -> dict:
             r["real_pct"] = round(r["real_krw"] / r["real_cost_krw"] * 100, 2)
         r["total"] = round(r["unreal"] + r["real"], 2)
         r["total_krw"] = round(r["unreal_krw"] + r["real_krw"])
+        # 누적 투입원가(원화) = 보유분 원가(평단×수량, 해외는 현재 환율) + 실현분 매입원가
+        hold_cost = _f(r["avg"]) * _f(r["qty"]) * mul if r["held"] else 0.0
+        if r["market"] == "overseas":
+            sold_cost = r["real_cost_krw"]
+        else:
+            sold_cost = sum(_f(x.get("buy_amt")) for x in r["real_detail"])
+        r["total_cost_krw"] = round(hold_cost + sold_cost)
+        r["total_pct"] = (round(r["total_krw"] / r["total_cost_krw"] * 100, 2)
+                          if r["total_cost_krw"] > 0 else None)
         real_krw += r["real_krw"]
         unreal_krw += r["unreal_krw"]
         out.append(r)
