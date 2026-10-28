@@ -2318,10 +2318,13 @@ function renderPnlBars(d) {
     const box = document.getElementById('pnl-bars');
     if (!box) return;
     const items = (d.symbols || [])
-        .map(s => ({ name: s.name || s.code || '', code: s.code, val: Number(s.total_krw) || 0, pct: s.total_pct, held: s.held }))
+        .map(s => ({ name: s.name || s.code || '', code: s.code, val: Number(s.total_krw) || 0, held: s.held }))
         .filter(x => Math.abs(x.val) > 0)
         .sort((a, b) => b.val - a.val);
     if (!items.length) { box.innerHTML = '<div class="loading-row">데이터 없음</div>'; return; }
+    // 전체 총수익 대비 비중: 종목 총수익 ÷ |전체 총수익| → 부호는 종목 손익, 합계는 ±100%
+    const sumAbs = Math.abs(Number((d.summary || {}).total_krw) || 0);
+    items.forEach(x => { x.pct = sumAbs > 0 ? x.val / sumAbs * 100 : null; });
     const maxAbs = Math.max(...items.map(x => Math.abs(x.val)), 1);
     box.innerHTML = items.map(x => {
         const w = Math.abs(x.val) / maxAbs * 50;
