@@ -265,10 +265,12 @@ async def _chart_store_window(symbol: str, exch: str, mkt: str, anchor: int,
     }
 
 
-async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict | None:
+async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str,
+                          live_price: float | None = None) -> dict | None:
     """2D~5D: 최근 N거래일 일봉(완전) + 오늘 누적 5분봉을 이어붙여 그린다.
 
     누적 초기엔 일봉으로 멀티데이 추세를 보여주고, 5분봉이 쌓일수록 최근 구간이 촘촘해진다.
+    마지막 점은 잔고 공식 현재가(live_price)로 — 전일 종가 대비 등락이 정확해진다.
     """
     days = MULTIDAY_DAYS[period]
     now = int(time.time())
@@ -300,6 +302,12 @@ async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str) -> dict
 
     if len(combined) > 400:
         combined = combined[:: (len(combined) // 400) or 1]
+    # 마지막 점을 공식 현재가로(전일 종가 대비 등락 정확)
+    if live_price and live_price > 0:
+        if combined[-1][0] is not None and combined[-1][0] < now:
+            combined = combined + [(now, float(live_price))]
+        else:
+            combined[-1] = (combined[-1][0], float(live_price))
     price = combined[-1][1]
     p = market._period(combined, price, "%m/%d")
     return {
@@ -376,7 +384,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
 
         # 2D~5D: 일봉(완전) + 오늘 5분봉 결합
         elif period in MULTIDAY_DAYS:
-            res = await _chart_multiday(symbol, exch, mkt, period)
+            res = await _chart_multiday(symbol, exch, mkt, period, live_price)
             if res is not None:
                 return _attach_ma200(_apply_prev_close(res, symbol, mkt, prev_close), symbol)
 
@@ -397,6 +405,13 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
 
     if len(pts) > 400:
         pts = pts[:: (len(pts) // 400) or 1]
+
+    # 마지막 점을 공식 현재가로 — 장기 일봉도 전일 종가 대비 금일 등락이 정확해진다
+    if live_price and live_price > 0:
+        if pts[-1][0] is not None and pts[-1][0] < now:
+            pts = pts + [(now, float(live_price))]
+        else:
+            pts[-1] = (pts[-1][0], float(live_price))
 
     price = pts[-1][1]
     p = market._period(pts, price, fmt)
