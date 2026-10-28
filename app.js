@@ -319,9 +319,9 @@ function renderHoldingsPie(holdings) {
 let holdingPeriod = '1D';
 let holdingTimer = null;
 
-// 봉 간격(1h~1일 차트): 1m | 5m | 15m. 패턴 읽기엔 5분 기본.
+// 봉 간격(1h~1일 차트): 1m | 5m. 패턴 읽기엔 5분 기본.
 let barSize = '5m';
-try { const v = localStorage.getItem('assetpro.barSize'); if (v) barSize = v; } catch (_) {}
+try { const v = localStorage.getItem('assetpro.barSize'); if (v === '1m' || v === '5m') barSize = v; } catch (_) {}
 
 // 장중(분봉) 기간 여부: 1h~12h 또는 1일. 정규장 시작/종료 세로 표기 대상.
 function isIntradayPeriod() {
@@ -344,18 +344,9 @@ let cmbHidden = new Set();
 try { const v = JSON.parse(localStorage.getItem('assetpro.cmbHidden') || '[]'); if (Array.isArray(v)) cmbHidden = new Set(v); } catch (_) {}
 function saveCmbHidden() { try { localStorage.setItem('assetpro.cmbHidden', JSON.stringify([...cmbHidden])); } catch (_) {} }
 
-// 통합 차트 보기: line(라인 겹침) | range(등락 비교 막대)
-let cmbView = 'line';
-try { const v = localStorage.getItem('assetpro.cmbView'); if (v) cmbView = v; } catch (_) {}
 // 반등 비교 정렬: score(복합점수) | reb(저점대비 반등) | drop(급락폭)
 let cmbSort = 'score';
 try { const v = localStorage.getItem('assetpro.cmbSort'); if (v) cmbSort = v; } catch (_) {}
-function setCmbView(v) {
-    if (v === cmbView) return;
-    cmbView = v;
-    try { localStorage.setItem('assetpro.cmbView', v); } catch (_) {}
-    if (lastChartsData) renderCombinedChart(lastChartsData);
-}
 function setCmbSort(v) {
     if (v === cmbSort) return;
     cmbSort = v;
@@ -489,7 +480,7 @@ function normSeries(s, base) {
     return arr.map(v => (v == null) ? null : (v / base - 1) * 100);
 }
 
-// 통합 비교 차트: 보유+관심 종목을 한 차트에 수익률% 기준으로 겹쳐 그림
+// 통합 비교: 보유+관심 종목을 수익률% 기준으로 정규화해 반등(급락 후 상승) 비교 목록으로 표시
 function renderCombinedChart(d) {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
@@ -528,98 +519,22 @@ function renderCombinedChart(d) {
     items.forEach((a, k) => { a.color = CMB_COLORS[k % CMB_COLORS.length]; a.hidden = cmbHidden.has(a.code); });
     const visible = items.filter(a => !a.hidden);
 
-    // 0% 기준 라벨(prev_close 있으면 전일 종가, 없으면 기간 시작)
-    const baseLabel = (visible.length && visible.every(a => a.basePrev)) ? '전일 종가' : '기간 시작';
-
-    // 보기 전환 툴바(라인 겹침 / 반등 비교) — 공통
+    // 툴바(정렬 / 전체·해제)
     const viewBar = `
         <div class="cmb-head">
-            <div class="cmb-viewtoggle">
-                <button type="button" data-cmb-view="line" class="${cmbView === 'line' ? 'active' : ''}">라인 겹침</button>
-                <button type="button" data-cmb-view="range" class="${cmbView === 'range' ? 'active' : ''}">반등 비교</button>
-            </div>
-            ${cmbView === 'range' ? `
             <div class="cmb-sorttoggle">
                 <span class="cmb-sortlbl">정렬</span>
                 <button type="button" data-cmb-sort="score" class="${cmbSort === 'score' ? 'active' : ''}">점수</button>
                 <button type="button" data-cmb-sort="reb" class="${cmbSort === 'reb' ? 'active' : ''}">반등</button>
                 <button type="button" data-cmb-sort="drop" class="${cmbSort === 'drop' ? 'active' : ''}">급락</button>
-            </div>` : ''}
+            </div>
             <span class="cmb-sel">
                 <button type="button" data-cmb-act="all">전체</button>
                 <button type="button" data-cmb-act="none">해제</button>
             </span>
         </div>`;
 
-    if (cmbView === 'range') { renderCombinedRebound(grid, items, visible, viewBar); return; }
-
-    // 전역 Y 범위(0% 포함) — 선택된(보이는) 종목 기준으로 스케일
-    let gmin = Infinity, gmax = -Infinity;
-    visible.forEach(a => a.norm.forEach(v => { if (v != null) { gmin = Math.min(gmin, v); gmax = Math.max(gmax, v); } }));
-    if (!Number.isFinite(gmin)) { gmin = -1; gmax = 1; }
-    gmin = Math.min(gmin, 0); gmax = Math.max(gmax, 0);
-    const pad = (gmax - gmin) * 0.06 || 1;
-    gmin -= pad; gmax += pad;
-    const range = (gmax - gmin) || 1;
-
-    const W = 1000, H = 340, padX = 6, padT = 8, padB = 8;
-    const xOf = (i, n) => padX + (i / Math.max(1, n - 1)) * (W - padX * 2);
-    const yOf = v => padT + (gmax - v) / range * (H - padT - padB);
-
-    // 각 종목 폴리라인(보이는 것만, 결측 구간은 끊어서)
-    let polys = '';
-    visible.forEach(a => {
-        const n = a.norm.length;
-        let seg = [], segs = [];
-        a.norm.forEach((v, i) => {
-            if (v == null) { if (seg.length) segs.push(seg); seg = []; }
-            else seg.push(`${xOf(i, n).toFixed(1)},${yOf(v).toFixed(1)}`);
-        });
-        if (seg.length) segs.push(seg);
-        segs.forEach(s => {
-            polys += `<polyline points="${s.join(' ')}" fill="none" stroke="${a.color}"
-                stroke-width="${a.isWatch ? 1.1 : 1.6}" ${a.isWatch ? 'stroke-dasharray="5 3"' : ''}
-                vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`;
-        });
-    });
-
-    const yZero = yOf(0);
-    const zero = `<line x1="${padX}" y1="${yZero.toFixed(1)}" x2="${W - padX}" y2="${yZero.toFixed(1)}"
-        stroke="var(--border, rgba(148,163,184,.45))" stroke-width="1" stroke-dasharray="3 3"
-        vector-effect="non-scaling-stroke"/>`;
-
-    // x축: 가장 긴 times 사용
-    const longest = items.reduce((best, a) => a.times.length > best.length ? a.times : best, []);
-
-    // 범례: 전체 표시(클릭=켜기/끄기). 보이는 건 수익률 내림차순, 숨긴 건 뒤로.
-    const leg = [...items]
-        .sort((x, y) => (x.hidden - y.hidden) || (y.last - x.last))
-        .map(a => `
-        <span class="cmb-leg-item${a.hidden ? ' off' : ''}" data-code="${a.code}" title="클릭: 차트에서 켜기/끄기">
-            <span class="cmb-dot" style="background:${a.color}"></span>
-            <span class="cmb-leg-name">${a.isWatch ? '<i class="fa-solid fa-star cmb-star"></i>' : ''}${a.name}</span>
-            <span class="cmb-leg-val ${a.last >= 0 ? 'positive' : 'negative'}">${a.last >= 0 ? '+' : ''}${a.last.toFixed(2)}%</span>
-        </span>`).join('');
-
-    const zeroTop = (yZero / H * 100).toFixed(1);
-    const emptyMsg = visible.length ? '' :
-        '<div class="cmb-empty">표시할 종목을 범례에서 선택하세요</div>';
-    grid.innerHTML = `
-        <div class="cmb-wrap">
-            ${viewBar}
-            <div class="cmb-chart-box">
-                <svg class="cmb-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${zero}${polys}</svg>
-                <span class="cmb-y cmb-y-top">${gmax >= 0 ? '+' : ''}${gmax.toFixed(1)}%</span>
-                <span class="cmb-y cmb-y-zero" style="top:${zeroTop}%">0%</span>
-                <span class="cmb-y cmb-y-bot">${gmin.toFixed(1)}%</span>
-                ${emptyMsg}
-            </div>
-            <div class="cmb-axis">${axisLabels(longest, 6)}</div>
-            <div class="cmb-note">
-                <span>${baseLabel} 대비 수익률 % · 실선=보유, 점선=관심종목 · 범례 클릭=선택</span>
-            </div>
-            <div class="cmb-legend">${leg}</div>
-        </div>`;
+    renderCombinedRebound(grid, items, visible, viewBar);
 }
 
 // 미니 스파크라인(반등 비교 행용): 저점(▼)·현재(●) 표시
@@ -798,7 +713,7 @@ function initHoldingToggle() {
         loadHoldingsCharts();
         scheduleHoldingRefresh();
     });
-    // 봉 간격 토글(1분/5분/15분)
+    // 봉 간격 토글(1분/5분)
     const bt = document.getElementById('bar-toggle');
     if (bt) {
         bt.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.bar === barSize));
@@ -830,8 +745,6 @@ function initHoldingToggle() {
     // 통합 차트 범례 클릭(종목 켜기/끄기) + 전체/해제 — 그리드는 재렌더돼도 유지되므로 위임
     const grid = document.getElementById('holdings-charts-grid');
     if (grid) grid.addEventListener('click', (e) => {
-        const vw = e.target.closest('[data-cmb-view]');
-        if (vw) { setCmbView(vw.dataset.cmbView); return; }
         const so = e.target.closest('[data-cmb-sort]');
         if (so) { setCmbSort(so.dataset.cmbSort); return; }
         const act = e.target.closest('[data-cmb-act]');
