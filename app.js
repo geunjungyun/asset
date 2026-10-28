@@ -503,7 +503,8 @@ function renderCombinedChart(d) {
     // 장중(1h~1D)은 전일 종가(prev_close)를 0% 기준으로 → "현재 %"가 카드 금일 등락율과 일치.
     // 멀티데이/주봉 등 prev_close가 없는 기간은 기간 시작(첫 봉) 기준 유지.
     const items = ordered.map(ch => {
-        const norm = normSeries(ch.series, Number(ch.prev_close) || 0);
+        const pc = Number(ch.prev_close) || 0;
+        const norm = normSeries(ch.series, pc);
         if (!norm) return null;
         const vals = norm.filter(v => v != null);
         if (vals.length < 2) return null;
@@ -514,6 +515,7 @@ function renderCombinedChart(d) {
             norm, times: ch.times || [],
             last: vals[vals.length - 1],
             hi, lo, amp: hi - lo,   // amp = 기간 변동폭(고점−저점)
+            basePrev: pc > 0,        // 전일 종가 기준 사용 여부
         };
     }).filter(Boolean);
 
@@ -526,8 +528,8 @@ function renderCombinedChart(d) {
     items.forEach((a, k) => { a.color = CMB_COLORS[k % CMB_COLORS.length]; a.hidden = cmbHidden.has(a.code); });
     const visible = items.filter(a => !a.hidden);
 
-    // 0% 기준 라벨(장중=전일 종가, 그 외=기간 시작)
-    const baseLabel = isIntradayPeriod() ? '전일 종가' : '기간 시작';
+    // 0% 기준 라벨(prev_close 있으면 전일 종가, 없으면 기간 시작)
+    const baseLabel = (visible.length && visible.every(a => a.basePrev)) ? '전일 종가' : '기간 시작';
 
     // 보기 전환 툴바(라인 겹침 / 반등 비교) — 공통
     const viewBar = `
@@ -702,7 +704,7 @@ function renderCombinedRebound(grid, items, visible, viewBar) {
             ${viewBar}
             <div class="rbd-caption">
                 점수 = 급락폭·저점 최근성·반등·최근 기울기 종합(높을수록 "급락 후 반등" 국면) ·
-                현재%는 ${isIntradayPeriod() ? '전일 종가' : '기간 시작'} 대비 ·
+                현재%는 ${(visible.length && visible.every(a => a.basePrev)) ? '전일 종가' : '기간 시작'} 대비 ·
                 미니차트 <span class="rbd-k-lo">●</span>저점 <span class="rbd-k-last">●</span>현재
             </div>
             <div class="rbd-list">${rows}</div>

@@ -354,7 +354,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
                         live_price: float | None = None,
                         prev_close: float | None = None,
                         bar: str = "5m") -> dict:
-    is_intraday = period == "1D" or period in HOUR_MAP  # 1h~1D 는 전일종가 기준 등락폭
+    # 수익률 기준: 전 기간 전일 종가(_apply_prev_close) — 통합/개별 공통
 
     if meritz_settings.enabled:
         # 1D: 세션 시작 고정(국내 08:00/해외 09:00) — 1분봉 누적본(해상도 균일)
@@ -378,7 +378,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         elif period in MULTIDAY_DAYS:
             res = await _chart_multiday(symbol, exch, mkt, period)
             if res is not None:
-                return _attach_ma200(res, symbol)
+                return _attach_ma200(_apply_prev_close(res, symbol, mkt, prev_close), symbol)
 
     interval, days, fmt = PERIOD_PLAN.get(period, PERIOD_PLAN["1D"])
     now = int(time.time())
@@ -392,7 +392,7 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
     # 스토어에 충분치 않으면 Yahoo 폴백(해외=티커, 국내=6자리→.KS)
     if len(pts) < 2:
         res = await market.get_stock_chart(symbol, period)
-        res = _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
+        res = _apply_prev_close(res, symbol, mkt, prev_close)   # 전 기간 전일 종가 기준
         return _attach_ma200(res, symbol)
 
     if len(pts) > 400:
@@ -410,5 +410,5 @@ async def holding_chart(symbol: str, exch: str, mkt: str, period: str,
         "as_of": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
         **p,
     }
-    res = _apply_prev_close(res, symbol, mkt, prev_close) if is_intraday else res
+    res = _apply_prev_close(res, symbol, mkt, prev_close)   # 전 기간 전일 종가 기준
     return _attach_ma200(res, symbol, period, pts)
