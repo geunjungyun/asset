@@ -1059,6 +1059,45 @@ async def get_stock_chart(code: str, period: str) -> dict:
     }
 
 
+async def search_symbol(query: str) -> str | None:
+    """회사명/오타 → 티커. Yahoo 검색 API로 최적 EQUITY/ETF 심볼 반환.
+
+    예: 'google' → 'GOOG', '애플' → 'AAPL'. 한국 상장(6자리.KS/.KQ)은 6자리코드로.
+    해외 보통주/ETF는 점 없는 순수 티커만 채택. 못 찾으면 None.
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                "https://query2.finance.yahoo.com/v1/finance/search",
+                params={"q": q, "quotesCount": 8, "newsCount": 0},
+                headers=YF_HEADERS,
+            )
+            r.raise_for_status()
+            quotes = r.json().get("quotes", []) or []
+    except (httpx.HTTPError, ValueError, KeyError):
+        return None
+
+    def _usable(qt: dict) -> str | None:
+        sym = (qt.get("symbol") or "").strip().upper()
+        if not sym:
+            return None
+        if sym.endswith((".KS", ".KQ")):      # 한국 상장 → 6자리코드
+            base = sym.split(".")[0]
+            return base if (base.isdigit() and len(base) == 6) else None
+        return sym if "." not in sym else None  # 해외: 접미사 없는 티커만
+
+    for want in ("EQUITY", "ETF"):             # 보통주 우선, 그다음 ETF
+        for qt in quotes:
+            if qt.get("quoteType") == want:
+                s = _usable(qt)
+                if s:
+                    return s
+    return None
+
+
 async def get_intraday_pts(code: str, interval: str = "5m", rng: str = "5d") -> list[tuple]:
     """Yahoo 장중 원시 포인트 [(ts, close), ...]. 티커 해석(숫자=.KS/.KQ, 영문=그대로). 실패 시 []."""
     code = (code or "").strip()

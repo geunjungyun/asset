@@ -223,14 +223,9 @@ async def candles_stats() -> dict:
 # --------------------------------------------------------------------------- #
 # 관심종목(watch) — 보유종목 차트에 함께 표시
 # --------------------------------------------------------------------------- #
-async def _resolve_watch(code: str) -> dict | None:
-    """티커/종목코드 → {symbol, market, exch, name}. 해외 거래소(OQ/NY)·이름 자동 해석."""
-    code = (code or "").strip().upper()
-    if not code:
-        return None
-    is_domestic = code.isdigit() and len(code) == 6
+async def _yahoo_probe(code: str, is_domestic: bool) -> tuple[str, bool]:
+    """(name, yahoo_ok): 해당 코드가 Yahoo에 있으면 이름과 데이터 유무."""
     name, yahoo_ok = "", False
-    # 이름 해석(Yahoo longName; 실패해도 치명적 아님) + Yahoo 데이터 유무 확인
     try:
         import httpx
         async with httpx.AsyncClient(timeout=12.0) as client:
@@ -243,6 +238,27 @@ async def _resolve_watch(code: str) -> dict | None:
                     break
     except Exception:  # noqa: BLE001
         pass
+    return name, yahoo_ok
+
+
+async def _resolve_watch(code: str) -> dict | None:
+    """티커/종목코드/회사명 → {symbol, market, exch, name}. 거래소·이름 자동 해석.
+
+    티커로 바로 안 잡히면(회사명·오타 입력 등) Yahoo 검색으로 티커를 찾아 재확인한다.
+    """
+    raw = (code or "").strip()
+    if not raw:
+        return None
+    code = raw.upper()
+    is_domestic = code.isdigit() and len(code) == 6
+    name, yahoo_ok = await _yahoo_probe(code, is_domestic)
+    # 티커로 바로 안 잡히면 이름/오타 검색으로 티커 해석(예: 'google' → GOOG)
+    if not yahoo_ok and not is_domestic:
+        sym = await market.search_symbol(raw)
+        if sym and sym.upper() != code:
+            code = sym.upper()
+            is_domestic = code.isdigit() and len(code) == 6
+            name, yahoo_ok = await _yahoo_probe(code, is_domestic)
 
     if is_domestic:
         q = await meritz_client.day_quote(code, "", "domestic") if meritz_settings.enabled else {}
