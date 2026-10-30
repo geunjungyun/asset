@@ -1743,3 +1743,11 @@ header {
     .wl-detail { flex-basis: 100%; }
     .wl-d-sigs { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* 마지막 매수/매도 텍스트 배지(차트 카드·관심종목 상세) */
+.hc-trade {
+    font-size: 0.66rem; font-weight: 600; padding: 0.06rem 0.4rem;
+    border-radius: 6px; white-space: nowrap; margin-left: 0.3rem;
+}
+.hc-trade.buy { color: var(--positive); background: rgba(34, 210, 127, 0.14); }
+.hc-trade.sell { color: var(--negative); background: rgba(239, 106, 106, 0.14); }

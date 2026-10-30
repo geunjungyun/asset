@@ -430,6 +430,7 @@ function buildChartCard(ch, isWatch) {
             <span class="hc-val">${money(ch.value, cur)}</span>
             <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
             ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
+            ${tradeBadge(ch.last_trade)}
         </div>
         ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : tradeVmark(ch.last_trade, ch.times), ma200ov)}
     `;
@@ -1224,6 +1225,16 @@ function tradeVmark(lastTrade, times) {
     if (!idxs.length) return [];   // 거래일이 차트 기간 밖 → 표식 없음
     const buy = lastTrade.side === 'buy';
     return [{ idx: idxs[idxs.length - 1], label: buy ? '매수' : '매도', kind: buy ? 'buy' : 'sell' }];
+}
+
+// 원장 기준 마지막 매수/매도 텍스트 배지(기간과 무관하게 항상 표시).
+function tradeBadge(lt) {
+    if (!lt || !lt.date || String(lt.date).length !== 8) return '';
+    const d = String(lt.date);
+    const md = d.slice(4, 6) + '/' + d.slice(6, 8);
+    const buy = lt.side === 'buy';
+    return `<span class="hc-trade ${buy ? 'buy' : 'sell'}" title="원장 기준 마지막 체결">`
+        + `${buy ? '매수' : '매도'} ${md}</span>`;
 }
 
 // 차트 블록: 스파크라인 + 세로축(최대/최소) 라벨 + 최고/최저 지점 점 + 시간축
@@ -2221,7 +2232,8 @@ async function loadWatchDetailChart() {
         if (Array.isArray(ch.ma200_series) && ch.ma200_series.length === (ch.series || []).length) ma200ov = ch.ma200_series;
         else if (Number.isFinite(Number(ch.ma200))) lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
         const valrow = `<div class="hc-valrow"><span class="hc-val">${money(ch.value, cur)}</span>
-            <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span></div>`;
+            <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
+            ${tradeBadge(ch.last_trade)}</div>`;
         box.innerHTML = valrow + chartBlock(ch.series, ch.times, up, curUnit(cur), true, lines, tradeVmark(ch.last_trade, ch.times), ma200ov);
     } catch (e) {
         box.innerHTML = '<div class="loading-row">차트를 불러올 수 없습니다.</div>';
