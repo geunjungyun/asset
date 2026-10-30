@@ -418,9 +418,8 @@ function buildChartCard(ch, isWatch) {
         else if (Number.isFinite(Number(ch.ma200)))
             lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
     }
-    // 원장 기준 마지막 매수/매도 가로선(보유·관심 공통)
-    const tl = tradeRefLine(ch.last_trade);
-    if (tl) lines.push(tl);
+    // 원장 기준 마지막 매수/매도 가로선(옵션, 보유·관심 공통)
+    if (showTrade) { const tl = tradeRefLine(ch.last_trade); if (tl) lines.push(tl); }
     const card = document.createElement('div');
     card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
     card.innerHTML = `
@@ -814,6 +813,11 @@ const OPT_MA_KEY = 'assetpro.showMa200';
 let showMa200 = false;
 try { const v = localStorage.getItem(OPT_MA_KEY); if (v !== null) showMa200 = v === '1'; } catch (_) {}
 
+// 차트에 마지막 매수/매도 체결가 선 표시 옵션(기본 ON)
+const OPT_TRADE_KEY = 'assetpro.showTrade';
+let showTrade = true;
+try { const v = localStorage.getItem(OPT_TRADE_KEY); if (v !== null) showTrade = v === '1'; } catch (_) {}
+
 // 도달 시 매도 비율(%) — 목표(익절)/손절
 const SR_KEY = 'assetpro.sellRatios';
 let sellRatios = { target: 100, stop: 100 };
@@ -904,6 +908,18 @@ function initRebalance() {
             showMa200 = maCb.checked;
             try { localStorage.setItem(OPT_MA_KEY, showMa200 ? '1' : '0'); } catch (_) {}
             if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
+        });
+    }
+
+    // 매수·매도 선 표시 옵션
+    const tradeCb = document.getElementById('opt-trade');
+    if (tradeCb) {
+        tradeCb.checked = showTrade;
+        tradeCb.addEventListener('change', () => {
+            showTrade = tradeCb.checked;
+            try { localStorage.setItem(OPT_TRADE_KEY, showTrade ? '1' : '0'); } catch (_) {}
+            if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
+            if (typeof wlSelected !== 'undefined' && wlSelected) loadWatchDetailChart();
         });
     }
 
@@ -2215,8 +2231,7 @@ async function loadWatchDetailChart() {
         let ma200ov = null;
         if (Array.isArray(ch.ma200_series) && ch.ma200_series.length === (ch.series || []).length) ma200ov = ch.ma200_series;
         else if (Number.isFinite(Number(ch.ma200))) lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
-        const tl = tradeRefLine(ch.last_trade);
-        if (tl) lines.push(tl);
+        if (showTrade) { const tl = tradeRefLine(ch.last_trade); if (tl) lines.push(tl); }
         const valrow = `<div class="hc-valrow"><span class="hc-val">${money(ch.value, cur)}</span>
             <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span></div>`;
         box.innerHTML = valrow + chartBlock(ch.series, ch.times, up, curUnit(cur), true, lines, [], ma200ov);
