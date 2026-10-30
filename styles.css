@@ -441,6 +441,11 @@ header {
     white-space: nowrap;
 }
 .spark-vlabel.sess-close { color: var(--accent-orange); }
+/* 원장 기준 마지막 매수/매도 표식(실선·종목색) */
+.spark-vline.sess-buy { border-left-style: solid; border-left-color: var(--positive); opacity: 0.85; }
+.spark-vline.sess-sell { border-left-style: solid; border-left-color: var(--negative); opacity: 0.85; }
+.spark-vlabel.sess-buy { color: var(--positive); }
+.spark-vlabel.sess-sell { color: var(--negative); }
 
 .spark-axis {
     display: flex;

@@ -175,6 +175,13 @@ async def holdings_charts(period: str = "realtime", bar: str = "5m") -> dict:
                 ch["name"] = h.get("name", ch.get("code"))
                 ch["kind"] = "held"
             charts = list(charts) + await _watch_charts(period, bar)
+            # 원장 참고: 종목별 마지막 매수/매도 첨부(차트에 표시)
+            try:
+                lt = await asyncio.to_thread(ledger_store.last_trades)
+            except Exception:  # noqa: BLE001
+                lt = {}
+            for ch in charts:
+                ch["last_trade"] = lt.get(ch.get("code"))
             return {"period": period, "currency": "USD", "charts": charts}
 
     # 폴백: mock(또는 KIS) 보유종목 → Yahoo
@@ -380,6 +387,11 @@ async def watch_chart(code: str, period: str = "1D", bar: str = "5m") -> JSONRes
     ch["name"] = w.get("name") or ch.get("code")
     ch["target"] = w.get("target")
     ch["stop"] = w.get("stop")
+    try:
+        lt = await asyncio.to_thread(ledger_store.last_trades)
+        ch["last_trade"] = lt.get(ch.get("code"))
+    except Exception:  # noqa: BLE001
+        ch["last_trade"] = None
     return JSONResponse(ch)
 
 

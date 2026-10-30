@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
@@ -301,3 +302,40 @@ def exec_stats() -> dict:
     with _db() as c:
         row = c.execute("SELECT COUNT(*) n, MIN(oder_date) mn, MAX(oder_date) mx FROM ledger_exec").fetchone()
     return {"rows": row["n"], "min_date": row["mn"], "max_date": row["mx"]}
+
+
+_LAST_TRADES_CACHE = {"ts": 0.0, "data": {}}
+
+
+def last_trades() -> dict:
+    """종목(거래소 접미사 제거) → 마지막 체결 {date, side, price, qty, name}. 60초 캐시.
+
+    차트에 '마지막 매수/매도' 표시용. get_merged()가 최신순이라 종목별 첫 등장이 마지막 거래.
+    키: 해외=티커(AMGN), 국내=6자리코드(000660).
+    """
+    now = time.time()
+    cache = _LAST_TRADES_CACHE
+    if cache["data"] and now - cache["ts"] < 60:
+        return cache["data"]
+    out: dict[str, dict] = {}
+    try:
+        for r in get_merged():
+            nm = r.get("smcd_name") or ""
+            if not _is_trade_name(nm):
+                continue
+            iscd = (r.get("iscd") or "").strip().upper()
+            base = iscd.split(".")[0] if "." in iscd else "".join(ch for ch in iscd if ch.isdigit())
+            if not base or base in out:
+                continue
+            out[base] = {
+                "date": r.get("tr_date") or "",
+                "side": "buy" if ("매수" in nm) else "sell",
+                "price": r.get("byng_unpr") or 0,
+                "qty": r.get("qty") or 0,
+                "name": r.get("name") or "",
+            }
+    except Exception:  # noqa: BLE001
+        return cache["data"] or {}
+    cache["ts"] = now
+    cache["data"] = out
+    return out
