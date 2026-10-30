@@ -2001,11 +2001,14 @@ function showView(name) {
     if (lp) lp.hidden = name !== 'ledger';
     const pp = document.getElementById('portfolio-page');
     if (pp) pp.hidden = name !== 'portfolio';
+    const wp = document.getElementById('watchlist-page');
+    if (wp) wp.hidden = name !== 'watchlist';
     const main = document.querySelector('.main-content');
     if (main) {
         main.classList.toggle('mode-sector', name === 'sector');
         main.classList.toggle('mode-ledger', name === 'ledger');
         main.classList.toggle('mode-portfolio', name === 'portfolio');
+        main.classList.toggle('mode-watchlist', name === 'watchlist');
     }
     // 사이드바 활성 표시
     document.querySelectorAll('.sidebar nav li').forEach(li => {
@@ -2015,6 +2018,7 @@ function showView(name) {
     if (name === 'sector') loadSectors(!sectorLoaded);
     if (name === 'ledger') loadLedger();
     if (name === 'portfolio') loadPnl();
+    if (name === 'watchlist') loadWatchlist();
 }
 
 function initSidebarNav() {
@@ -2023,6 +2027,271 @@ function initSidebarNav() {
             e.preventDefault();
             showView(a.dataset.view);
         });
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────── //
+// 관심종목 전용 페이지 (좌측 메뉴 '관심종목')
+// ──────────────────────────────────────────────────────────────────────── //
+let wlData = [];
+let wlSort = 'rs';            // 'rs' | 'group' | 'chg'
+let wlGroupFilter = null;     // null=전체 | '__none__'=미분류 | 그룹명
+let wlSelected = null;
+let wlDetailPeriod = '1D';
+let wlInited = false;
+
+function wlGroupName(x) { return (x.grp && String(x.grp).trim()) ? String(x.grp).trim() : ''; }
+function wlSigCls(v) { return (v === null || v === undefined) ? '' : (v >= 0 ? 'positive' : 'negative'); }
+function wlSigNum(v, d = 1) {
+    return (v === null || v === undefined) ? '<span class="wl-dash">–</span>' : (v >= 0 ? '+' : '') + Number(v).toFixed(d);
+}
+function wlStateBadge(s) {
+    if (!s || s === '-') return '<span class="wl-dash">–</span>';
+    const cls = s === '건전' ? 'ok' : s === '과열' ? 'warn' : s === '약세' ? 'bad' : 'mid';
+    return `<span class="wl-state ${cls}">${s}</span>`;
+}
+
+async function loadWatchlist() {
+    initWatchlist();
+    const tb = document.getElementById('wl-tbody');
+    try {
+        const d = await fetchJSON('/api/watchlist?_=' + Date.now());
+        wlData = d.items || [];
+        renderWatchGroups();
+        renderWatchTable();
+        const u = document.getElementById('wl-updated');
+        if (u) u.textContent = '기준: ' + new Date().toLocaleTimeString('ko-KR');
+        if (wlData.length && (!wlSelected || !wlData.some(x => x.symbol === wlSelected)))
+            selectWatch(wlData[0].symbol);
+        else if (!wlData.length) {
+            const box = document.getElementById('wl-detail');
+            if (box) box.innerHTML = '<div class="wl-detail-empty">관심종목을 추가하세요</div>';
+        }
+    } catch (e) {
+        if (tb) tb.innerHTML = '<tr><td colspan="9" class="loading-row">불러올 수 없습니다.</td></tr>';
+    }
+}
+
+function renderWatchGroups() {
+    const box = document.getElementById('wl-groups');
+    if (!box) return;
+    const groups = [...new Set(wlData.map(wlGroupName).filter(Boolean))].sort();
+    const chip = (key, label, active) =>
+        `<button class="wl-chip${active ? ' active' : ''}" data-grp="${key}">${label}</button>`;
+    let html = chip('__all__', '전체', wlGroupFilter === null);
+    groups.forEach(g => { html += chip(g, g, wlGroupFilter === g); });
+    if (wlData.some(x => !wlGroupName(x))) html += chip('__none__', '미분류', wlGroupFilter === '__none__');
+    box.innerHTML = html;
+}
+
+function wlSorted(items) {
+    const a = [...items];
+    if (wlSort === 'chg') a.sort((x, y) => (y.change_pct ?? -1e9) - (x.change_pct ?? -1e9));
+    else if (wlSort === 'group')
+        a.sort((x, y) => (wlGroupName(x) || '힣').localeCompare(wlGroupName(y) || '힣') || (y.rs ?? -1e9) - (x.rs ?? -1e9));
+    else a.sort((x, y) => (y.rs ?? -1e9) - (x.rs ?? -1e9));
+    return a;
+}
+
+function renderWatchTable() {
+    const tb = document.getElementById('wl-tbody');
+    if (!tb) return;
+    let items = wlData;
+    if (wlGroupFilter === '__none__') items = items.filter(x => !wlGroupName(x));
+    else if (wlGroupFilter) items = items.filter(x => wlGroupName(x) === wlGroupFilter);
+    if (!items.length) {
+        tb.innerHTML = '<tr><td colspan="9" class="loading-row">관심종목이 없습니다. 위에서 티커를 추가하세요.</td></tr>';
+        return;
+    }
+    const sorted = wlSorted(items);
+    let html = '', curG = '\u0000';
+    sorted.forEach(x => {
+        if (wlSort === 'group') {
+            const g = wlGroupName(x) || '미분류';
+            if (g !== curG) {
+                curG = g;
+                const n = sorted.filter(y => (wlGroupName(y) || '미분류') === g).length;
+                html += `<tr class="wl-grouprow"><td colspan="9">🏷 ${g} (${n})</td></tr>`;
+            }
+        }
+        html += wlRow(x);
+    });
+    tb.innerHTML = html;
+}
+
+function wlRow(x) {
+    const cur = x.market === 'overseas' ? 'USD' : 'KRW';
+    const chgCls = (x.change_pct ?? 0) >= 0 ? 'positive' : 'negative';
+    const price = x.price != null ? money(x.price, cur) : '<span class="wl-dash">–</span>';
+    const sel = x.symbol === wlSelected ? ' wl-sel' : '';
+    const dash = '<span class="wl-dash">–</span>';
+    return `<tr class="wl-row${sel}" data-code="${x.symbol}">
+        <td class="wl-name"><b>${x.symbol}</b> <span class="wl-sub">${x.name || ''}</span></td>
+        <td class="wl-sector">${x.sector || dash}</td>
+        <td class="num">${price}</td>
+        <td class="num ${x.change_pct != null ? chgCls : ''}">${x.change_pct != null ? _pp(x.change_pct) : dash}</td>
+        <td class="num ${wlSigCls(x.rs)}">${wlSigNum(x.rs)}</td>
+        <td class="num ${wlSigCls(x.accel)}">${wlSigNum(x.accel)}</td>
+        <td class="num ${wlSigCls(x.drank)}">${x.drank != null ? (x.drank >= 0 ? '+' : '') + x.drank : dash}</td>
+        <td class="c">${wlStateBadge(x.state)}</td>
+        <td class="c"><button class="wl-del" title="관심종목 삭제" data-del="${x.symbol}">&times;</button></td>
+    </tr>`;
+}
+
+function selectWatch(code) {
+    wlSelected = code;
+    document.querySelectorAll('.wl-row').forEach(r => r.classList.toggle('wl-sel', r.dataset.code === code));
+    renderWatchDetail();
+}
+
+function wlSigCard(k, v, d = 1) {
+    const val = (v === null || v === undefined) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d);
+    return `<div class="wl-sigcard"><div class="wl-sigk">${k}</div><div class="wl-sigv ${wlSigCls(v)}">${val}</div></div>`;
+}
+
+function renderWatchDetail() {
+    const box = document.getElementById('wl-detail');
+    if (!box) return;
+    const x = wlData.find(y => y.symbol === wlSelected);
+    if (!x) { box.innerHTML = '<div class="wl-detail-empty">종목을 선택하세요</div>'; return; }
+    const groups = [...new Set(wlData.map(wlGroupName).filter(Boolean))];
+    box.innerHTML = `
+      <div class="wl-d-head">
+        <div class="wl-d-title"><span class="wl-d-sym">${x.symbol}</span> <span class="wl-d-name">${x.name || ''}</span></div>
+        <div class="period-toggle wl-d-period" id="wl-d-period">
+          ${['1D', '1W', '1M', '3M', '1Y'].map(p => `<button data-p="${p}" class="${p === wlDetailPeriod ? 'active' : ''}">${p}</button>`).join('')}
+        </div>
+      </div>
+      <div class="wl-d-chart" id="wl-d-chart"><div class="loading-row">차트 불러오는 중...</div></div>
+      <div class="wl-d-sigs">
+        ${wlSigCard('RS', x.rs)} ${wlSigCard('가속', x.accel)} ${wlSigCard('Δ순위', x.drank, 0)}
+        <div class="wl-sigcard"><div class="wl-sigk">상태</div><div class="wl-sigv">${wlStateBadge(x.state)}</div></div>
+      </div>
+      <div class="wl-d-edit">
+        <label>목표가<input type="number" step="any" id="wl-e-target" value="${x.target ?? ''}"></label>
+        <label>손절가<input type="number" step="any" id="wl-e-stop" value="${x.stop ?? ''}"></label>
+        <label>그룹<input type="text" id="wl-e-grp" list="wl-grp-list" value="${x.grp ?? ''}" placeholder="예: 반도체 대체"></label>
+        <datalist id="wl-grp-list">${groups.map(g => `<option value="${g}"></option>`).join('')}</datalist>
+      </div>
+      <label class="wl-d-memo">메모<textarea id="wl-e-memo" rows="2" placeholder="예: RS 양전환 + 20일선 회복 시 진입">${x.memo ?? ''}</textarea></label>
+      <div class="wl-d-save"><button id="wl-save" type="button">저장</button><span class="watch-msg" id="wl-save-msg"></span></div>
+    `;
+    const pt = document.getElementById('wl-d-period');
+    if (pt) pt.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-p]'); if (!b) return;
+        wlDetailPeriod = b.dataset.p;
+        pt.querySelectorAll('button').forEach(z => z.classList.remove('active'));
+        b.classList.add('active');
+        loadWatchDetailChart();
+    });
+    const sv = document.getElementById('wl-save');
+    if (sv) sv.addEventListener('click', () => saveWatchEdit(x.symbol));
+    loadWatchDetailChart();
+}
+
+async function loadWatchDetailChart() {
+    const box = document.getElementById('wl-d-chart');
+    if (!box || !wlSelected) return;
+    try {
+        const ch = await fetchJSON(`/api/watch-chart?code=${encodeURIComponent(wlSelected)}&period=${wlDetailPeriod}&bar=5m&_=${Date.now()}`);
+        const cur = ch.currency || 'USD';
+        const up = (ch.change_pct || 0) >= 0;
+        const lines = [];
+        if (Number.isFinite(Number(ch.target)) && ch.target > 0) lines.push({ value: Number(ch.target), label: '목표', kind: 'target' });
+        if (Number.isFinite(Number(ch.stop)) && ch.stop > 0) lines.push({ value: Number(ch.stop), label: '손절', kind: 'stop' });
+        let ma200ov = null;
+        if (Array.isArray(ch.ma200_series) && ch.ma200_series.length === (ch.series || []).length) ma200ov = ch.ma200_series;
+        else if (Number.isFinite(Number(ch.ma200))) lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
+        const valrow = `<div class="hc-valrow"><span class="hc-val">${money(ch.value, cur)}</span>
+            <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span></div>`;
+        box.innerHTML = valrow + chartBlock(ch.series, ch.times, up, curUnit(cur), true, lines, [], ma200ov);
+    } catch (e) {
+        box.innerHTML = '<div class="loading-row">차트를 불러올 수 없습니다.</div>';
+    }
+}
+
+async function saveWatchEdit(code) {
+    const g = (document.getElementById('wl-e-grp').value || '').trim();
+    const memo = document.getElementById('wl-e-memo').value || '';
+    const t = document.getElementById('wl-e-target').value;
+    const s = document.getElementById('wl-e-stop').value;
+    const body = {
+        grp: g || null, memo: memo || null,
+        target: t === '' ? null : Number(t), stop: s === '' ? null : Number(s),
+    };
+    const msg = document.getElementById('wl-save-msg');
+    try {
+        await fetch(`/api/watch/${encodeURIComponent(code)}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const x = wlData.find(y => y.symbol === code);
+        if (x) Object.assign(x, body);
+        if (msg) { msg.textContent = '저장됨'; msg.className = 'watch-msg ok'; }
+        renderWatchGroups();
+        renderWatchTable();
+        loadWatchDetailChart();   // 목표/손절선 반영
+    } catch (e) {
+        if (msg) { msg.textContent = '저장 실패'; msg.className = 'watch-msg err'; }
+    }
+}
+
+async function wlAdd() {
+    const input = document.getElementById('wl-input');
+    const msg = document.getElementById('wl-msg');
+    const code = (input.value || '').trim();
+    if (!code) return;
+    if (msg) { msg.textContent = '추가 중…'; msg.className = 'watch-msg'; }
+    try {
+        const res = await fetch('/api/watch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || '추가 실패');
+        input.value = '';
+        if (msg) { msg.textContent = `${(data.item && data.item.name) || code} 추가됨`; msg.className = 'watch-msg ok'; }
+        wlSelected = (data.item && data.item.symbol) || wlSelected;
+        await loadWatchlist();
+    } catch (err) {
+        if (msg) { msg.textContent = err.message || '추가 실패'; msg.className = 'watch-msg err'; }
+    }
+}
+
+async function wlRemove(code) {
+    try {
+        await fetch(`/api/watch/${encodeURIComponent(code)}`, { method: 'DELETE' });
+        if (wlSelected === code) wlSelected = null;
+        await loadWatchlist();
+    } catch (e) { console.error(e); }
+}
+
+function initWatchlist() {
+    if (wlInited) return;
+    wlInited = true;
+    const btn = document.getElementById('wl-add-btn');
+    const input = document.getElementById('wl-input');
+    if (btn) btn.addEventListener('click', wlAdd);
+    if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') wlAdd(); });
+    const sort = document.getElementById('wl-sort');
+    if (sort) sort.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-wlsort]'); if (!b) return;
+        wlSort = b.dataset.wlsort;
+        sort.querySelectorAll('button').forEach(z => z.classList.remove('active'));
+        b.classList.add('active');
+        renderWatchTable();
+    });
+    const groups = document.getElementById('wl-groups');
+    if (groups) groups.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-grp]'); if (!b) return;
+        wlGroupFilter = b.dataset.grp === '__all__' ? null : b.dataset.grp;
+        renderWatchGroups();
+        renderWatchTable();
+    });
+    const tbody = document.getElementById('wl-tbody');
+    if (tbody) tbody.addEventListener('click', (e) => {
+        const del = e.target.closest('[data-del]');
+        if (del) { e.stopPropagation(); wlRemove(del.dataset.del); return; }
+        const row = e.target.closest('.wl-row');
+        if (row && row.dataset.code) selectWatch(row.dataset.code);
     });
 }
 

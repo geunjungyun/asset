@@ -285,11 +285,86 @@ async def watch_add(payload: dict) -> JSONResponse:
     return JSONResponse({"ok": True, "item": info})
 
 
+@app.patch("/api/watch/{code}")
+async def watch_update(code: str, payload: dict) -> dict:
+    """관심종목 편집(그룹·메모·목표가·손절가·정렬). body: 변경할 필드만."""
+    fields = {k: payload.get(k) for k in ("grp", "memo", "target", "stop", "sort_order")
+              if k in payload}
+    candle_store.update_watch(code.strip().upper(), fields)
+    return {"ok": True}
+
+
 @app.delete("/api/watch/{code}")
 async def watch_remove(code: str) -> dict:
     """관심종목 제거."""
     candle_store.remove_watch(code.strip().upper())
     return {"ok": True}
+
+
+@app.get("/api/watchlist")
+async def watchlist() -> dict:
+    """관심종목 전용 페이지용: watch 레지스트리 + 시세(현재가·금일%·전일종가)
+    + 신호(RS·가속·Δ순위·상태, 미국 유니버스 종목만)."""
+    items = candle_store.list_watch(role="watch")
+    try:
+        sigs = await market.get_board_signals()
+    except Exception:  # noqa: BLE001
+        sigs = {}
+
+    sem = asyncio.Semaphore(4)
+
+    async def _one(w):
+        async with sem:
+            q = {}
+            if meritz_settings.enabled:
+                try:
+                    q = await meritz_client.day_quote(w["symbol"], w.get("exch", ""), w["market"])
+                except Exception:  # noqa: BLE001
+                    q = {}
+            price, prev = q.get("price"), q.get("prev_close")
+            chg = round((price - prev) / prev * 100, 2) if (price and prev) else None
+            sig = sigs.get(w["symbol"])
+            return {
+                "symbol": w["symbol"], "name": w.get("name") or w["symbol"],
+                "market": w.get("market"), "exch": w.get("exch"),
+                "grp": w.get("grp"), "memo": w.get("memo"),
+                "target": w.get("target"), "stop": w.get("stop"),
+                "sort_order": w.get("sort_order"),
+                "price": price, "prev_close": prev, "change_pct": chg,
+                "sector": (sig or {}).get("sector"),
+                "rs": (sig or {}).get("rs"), "accel": (sig or {}).get("accel"),
+                "drank": (sig or {}).get("drank"), "state": (sig or {}).get("state"),
+                "has_signal": sig is not None,
+            }
+
+    rows = await asyncio.gather(*[_one(w) for w in items])
+    return {"items": rows}
+
+
+@app.get("/api/watch-chart")
+async def watch_chart(code: str, period: str = "1D", bar: str = "5m") -> JSONResponse:
+    """관심종목 1종목 상세 차트(보유차트와 동일: 메리츠 누적본·200일선·전일종가 기준)."""
+    code = (code or "").strip().upper()
+    w = next((x for x in candle_store.list_watch(role="watch") if x["symbol"] == code), None)
+    if w is None:
+        info = await _resolve_watch(code)
+        if not info or not info.get("has_data"):
+            return JSONResponse({"error": "시세를 찾을 수 없습니다."}, status_code=404)
+        w = {"symbol": info["symbol"], "market": info["market"],
+             "exch": info["exch"], "name": info["name"], "target": None, "stop": None}
+    q = {}
+    if meritz_settings.enabled:
+        try:
+            q = await meritz_client.day_quote(w["symbol"], w.get("exch", ""), w["market"])
+        except Exception:  # noqa: BLE001
+            q = {}
+    ch = await chart_service.holding_chart(
+        w["symbol"], w.get("exch", ""), w["market"], period,
+        live_price=q.get("price"), prev_close=q.get("prev_close"), bar=bar)
+    ch["name"] = w.get("name") or ch.get("code")
+    ch["target"] = w.get("target")
+    ch["stop"] = w.get("stop")
+    return JSONResponse(ch)
 
 
 @app.get("/api/ledger/transactions")

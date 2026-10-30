@@ -65,6 +65,13 @@ def init_db() -> None:
                 enabled   INTEGER DEFAULT 1
             )"""
         )
+        # 관심종목 페이지용 확장 컬럼(기존 DB 마이그레이션: 없는 것만 추가)
+        _cols = {r[1] for r in c.execute("PRAGMA table_info(watch)").fetchall()}
+        for col, decl in (("grp", "TEXT"), ("memo", "TEXT"),
+                          ("target", "REAL"), ("stop", "REAL"),
+                          ("sort_order", "INTEGER")):
+            if col not in _cols:
+                c.execute(f"ALTER TABLE watch ADD COLUMN {col} {decl}")
     _initialized = True
 
 
@@ -231,7 +238,8 @@ def upsert_watch(symbol: str, market: str, exch: str, name: str,
 
 
 def list_watch(enabled_only: bool = True, role: str | None = None) -> list[dict]:
-    q = "SELECT symbol, market, exch, name, role, intervals, enabled FROM watch"
+    q = ("SELECT symbol, market, exch, name, role, intervals, enabled,"
+         " grp, memo, target, stop, sort_order FROM watch")
     conds, args = [], []
     if enabled_only:
         conds.append("enabled=1")
@@ -243,9 +251,24 @@ def list_watch(enabled_only: bool = True, role: str | None = None) -> list[dict]
         rows = c.execute(q, args).fetchall()
     return [
         {"symbol": r[0], "market": r[1], "exch": r[2], "name": r[3],
-         "role": r[4], "intervals": json.loads(r[5] or "[]"), "enabled": r[6]}
+         "role": r[4], "intervals": json.loads(r[5] or "[]"), "enabled": r[6],
+         "grp": r[7], "memo": r[8], "target": r[9], "stop": r[10], "sort_order": r[11]}
         for r in rows
     ]
+
+
+# 관심종목 페이지에서 편집 가능한 필드
+_WATCH_EDITABLE = {"grp", "memo", "target", "stop", "sort_order"}
+
+
+def update_watch(symbol: str, fields: dict) -> None:
+    """관심종목의 그룹·메모·목표·손절·정렬값 갱신(제공된 필드만)."""
+    sets = {k: v for k, v in (fields or {}).items() if k in _WATCH_EDITABLE}
+    if not sets:
+        return
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with _lock, _db() as c:
+        c.execute(f"UPDATE watch SET {cols} WHERE symbol=?", (*sets.values(), symbol))
 
 
 def remove_watch(symbol: str) -> None:

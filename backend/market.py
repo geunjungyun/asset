@@ -727,6 +727,26 @@ async def get_sector_board() -> dict:
     return data
 
 
+async def get_board_signals() -> dict:
+    """종목코드 → 신호(rs/accel/drank/state/rsi/vs_ma200/sector) 평면 맵.
+
+    섹터 유니버스(미국)에 속한 종목만 포함. 관심종목 페이지에서 신호 조회용.
+    """
+    board = await get_sector_board()
+    out: dict[str, dict] = {}
+    for so in board.get("sectors", []):
+        for ind in so.get("industries", []):
+            for t in ind.get("stocks", []):
+                if "score" in t:   # no_data 제외
+                    out[t["code"]] = {
+                        "rs": t.get("rs"), "accel": t.get("accel"),
+                        "drank": t.get("drank"), "state": t.get("state"),
+                        "rsi": t.get("rsi"), "vs_ma200": t.get("vs_ma200"),
+                        "rank": t.get("rank"), "sector": so.get("name"),
+                    }
+    return out
+
+
 def board_asof(series_ts_map: dict, names: dict, cfg: dict, cutoff_ts: int, label: str) -> dict:
     """cutoff_ts(해당 날짜 말) 이전 종가만으로 보드 재계산(소급용)."""
     closes = {sym: [c for ts, c in lst if ts <= cutoff_ts] for sym, lst in series_ts_map.items()}
