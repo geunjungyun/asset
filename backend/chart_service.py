@@ -282,8 +282,10 @@ async def _chart_multiday(symbol: str, exch: str, mkt: str, period: str,
 
     pts_5m = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "5m", start_ts=start) if c]
     cutoff = pts_5m[0][0] if pts_5m else now
-    # 5분봉이 시작되기 전까지의 일봉 중 최근 N개
-    daily = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "1d") if c and ts < cutoff][-days:]
+    # 창 안에서 5분봉이 시작되기 전 구간만 일봉으로 채움(start 하한 — 창 밖 과거를 끌어오지 않음).
+    # 분봉이 창 전체를 덮으면 이 구간은 비어, 범위가 정확히 N거래일로 유지된다.
+    daily = [(ts, c) for ts, c, *_ in store.get_candles(symbol, "1d")
+             if c and start <= ts < cutoff]
 
     # 과거 구간이 일봉뿐(관심종목 신규 추가 등 누적본 부족)이면 Yahoo 5분봉으로 메움.
     # 보유종목은 이미 5분봉이 과거까지 쌓여 cutoff가 과거라 Yahoo 구간이 비어 영향 없음.
