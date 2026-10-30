@@ -418,6 +418,9 @@ function buildChartCard(ch, isWatch) {
         else if (Number.isFinite(Number(ch.ma200)))
             lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
     }
+    // 원장 기준 마지막 매수/매도 가로선(보유·관심 공통)
+    const tl = tradeRefLine(ch.last_trade);
+    if (tl) lines.push(tl);
     const card = document.createElement('div');
     card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
     card.innerHTML = `
@@ -430,9 +433,8 @@ function buildChartCard(ch, isWatch) {
             <span class="hc-val">${money(ch.value, cur)}</span>
             <span class="hc-chg ${cls}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
             ${totRet != null ? `<span class="hc-ret ${retCls}" title="전체 수익률(매입평균가 대비)">수익 ${pct(totRet)}</span>` : ''}
-            ${tradeBadge(ch.last_trade)}
         </div>
-        ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : tradeVmark(ch.last_trade, ch.times), ma200ov)}
+        ${chartBlock(ch.series, ch.times, up, curUnit(cur), false, lines, isIntradayPeriod() ? sessionMarks(ch.times, cur) : [], ma200ov)}
     `;
     if (isWatch) {
         const del = card.querySelector('.hc-del');
@@ -1209,32 +1211,14 @@ function sessionMarks(times, cur) {
     }).filter(Boolean);
 }
 
-// 원장 기준 마지막 매수/매도 → 날짜축(멀티데이·일봉) 세로 표식.
-// 시각축(1D·Nh, "HH:MM")엔 과거 거래일을 매칭할 수 없어 표시하지 않는다.
-function tradeVmark(lastTrade, times) {
-    if (!lastTrade || !lastTrade.date || !Array.isArray(times) || !times.length) return [];
-    const d = String(lastTrade.date);
-    if (d.length !== 8) return [];
-    const mmdd = d.slice(4, 6) + '/' + d.slice(6, 8);   // 10/24
-    const yymm = d.slice(2, 4) + '/' + d.slice(4, 6);   // 26/10
-    const isDateAxis = times.every(t => !/:/.test(t)) && times.some(t => /^\d{2}\/\d{2}$/.test(t));
-    if (!isDateAxis) return [];
-    let idxs = [];
-    for (let i = 0; i < times.length; i++) if (times[i] === mmdd) idxs.push(i);
-    if (!idxs.length) for (let i = 0; i < times.length; i++) if (times[i] === yymm) idxs.push(i);
-    if (!idxs.length) return [];   // 거래일이 차트 기간 밖 → 표식 없음
-    const buy = lastTrade.side === 'buy';
-    return [{ idx: idxs[idxs.length - 1], label: buy ? '매수' : '매도', kind: buy ? 'buy' : 'sell' }];
-}
-
-// 원장 기준 마지막 매수/매도 텍스트 배지(기간과 무관하게 항상 표시).
-function tradeBadge(lt) {
-    if (!lt || !lt.date || String(lt.date).length !== 8) return '';
-    const d = String(lt.date);
-    const md = d.slice(4, 6) + '/' + d.slice(6, 8);
+// 원장 기준 마지막 체결가 → 가로 기준선(매수 초록·매도 빨강).
+// 날짜를 축에 맞출 필요 없이 '얼마에 마지막으로 샀/팔았나'를 전 기간에서 보여준다.
+function tradeRefLine(lt) {
+    if (!lt || !(Number(lt.price) > 0)) return null;
+    const d = String(lt.date || '');
+    const md = (d.length === 8) ? ' ' + d.slice(4, 6) + '/' + d.slice(6, 8) : '';
     const buy = lt.side === 'buy';
-    return `<span class="hc-trade ${buy ? 'buy' : 'sell'}" title="원장 기준 마지막 체결">`
-        + `${buy ? '매수' : '매도'} ${md}</span>`;
+    return { value: Number(lt.price), label: (buy ? '매수' : '매도') + md, kind: buy ? 'buy' : 'sell' };
 }
 
 // 차트 블록: 스파크라인 + 세로축(최대/최소) 라벨 + 최고/최저 지점 점 + 시간축
@@ -2231,10 +2215,11 @@ async function loadWatchDetailChart() {
         let ma200ov = null;
         if (Array.isArray(ch.ma200_series) && ch.ma200_series.length === (ch.series || []).length) ma200ov = ch.ma200_series;
         else if (Number.isFinite(Number(ch.ma200))) lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
+        const tl = tradeRefLine(ch.last_trade);
+        if (tl) lines.push(tl);
         const valrow = `<div class="hc-valrow"><span class="hc-val">${money(ch.value, cur)}</span>
-            <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span>
-            ${tradeBadge(ch.last_trade)}</div>`;
-        box.innerHTML = valrow + chartBlock(ch.series, ch.times, up, curUnit(cur), true, lines, tradeVmark(ch.last_trade, ch.times), ma200ov);
+            <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span></div>`;
+        box.innerHTML = valrow + chartBlock(ch.series, ch.times, up, curUnit(cur), true, lines, [], ma200ov);
     } catch (e) {
         box.innerHTML = '<div class="loading-row">차트를 불러올 수 없습니다.</div>';
     }

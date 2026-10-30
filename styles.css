@@ -1191,6 +1191,11 @@ header {
 .spark-reflabel.ref-stop   { color: var(--negative); }
 .spark-refline.ref-ma200   { border-top-color: #e0a43b; border-top-style: solid; opacity: 0.85; }
 .spark-reflabel.ref-ma200  { color: #e0a43b; }
+/* 원장 기준 마지막 체결가(매수 초록·매도 빨강, 실선) */
+.spark-refline.ref-buy  { border-top-color: var(--positive); border-top-style: solid; opacity: 0.9; }
+.spark-refline.ref-sell { border-top-color: var(--negative); border-top-style: solid; opacity: 0.9; }
+.spark-reflabel.ref-buy  { color: var(--positive); }
+.spark-reflabel.ref-sell { color: var(--negative); }
 /* 평단은 좌측, 목표·손절 라벨은 우측에 배치해 겹침 방지 */
 .spark-reflabel.ref-target, .spark-reflabel.ref-stop { left: auto; right: 3px; }
 .spark-reflabel.ref-ma200 { left: auto; right: 3px; }
