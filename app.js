@@ -418,14 +418,17 @@ function buildChartCard(ch, isWatch) {
         else if (Number.isFinite(Number(ch.ma200)))
             lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
     }
-    // 원장 기준 마지막 매수/매도 가로선(옵션, 보유·관심 공통)
-    if (showTrade) { const tl = tradeRefLine(ch.last_trade); if (tl) lines.push(tl); }
+    // 원장 기준 마지막 매수/매도 가로선(전체 옵션 + 종목별 토글)
+    const tradeOn = tradeLineOn(ch.code);
+    if (tradeOn) { const tl = tradeRefLine(ch.last_trade); if (tl) lines.push(tl); }
+    const hasTrade = !!(ch.last_trade && Number(ch.last_trade.price) > 0);
     const card = document.createElement('div');
     card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
     card.innerHTML = `
         <div class="hc-top">
             <span class="hc-name">${ch.name || ch.code}</span>
             <span class="hc-code">${ch.code}</span>
+            ${hasTrade && showTrade ? `<button class="hc-tlbtn ${tradeOn ? 'on' : 'off'}" data-tl="${ch.code}" title="이 종목 매수·매도 선 표시/숨김">매매선</button>` : ''}
             ${isWatch ? `<button class="hc-del" title="관심종목에서 제거" data-code="${ch.code}">&times;</button>` : ''}
         </div>
         <div class="hc-valrow">
@@ -439,6 +442,13 @@ function buildChartCard(ch, isWatch) {
         const del = card.querySelector('.hc-del');
         if (del) del.addEventListener('click', () => removeWatch(del.dataset.code));
     }
+    const tlb = card.querySelector('.hc-tlbtn');
+    if (tlb) tlb.addEventListener('click', () => {
+        const code = tlb.dataset.tl;
+        if (tradeHidden.has(code)) tradeHidden.delete(code); else tradeHidden.add(code);
+        saveTradeHidden();
+        if (lastChartsData) renderHoldingsChartsGrid(lastChartsData);
+    });
     return card;
 }
 
@@ -813,10 +823,17 @@ const OPT_MA_KEY = 'assetpro.showMa200';
 let showMa200 = false;
 try { const v = localStorage.getItem(OPT_MA_KEY); if (v !== null) showMa200 = v === '1'; } catch (_) {}
 
-// 차트에 마지막 매수/매도 체결가 선 표시 옵션(기본 ON)
+// 차트에 마지막 매수/매도 체결가 선 표시 옵션(전체 마스터, 기본 ON)
 const OPT_TRADE_KEY = 'assetpro.showTrade';
 let showTrade = true;
 try { const v = localStorage.getItem(OPT_TRADE_KEY); if (v !== null) showTrade = v === '1'; } catch (_) {}
+
+// 종목별 매수/매도 선 숨김 집합(전체 ON일 때 개별로 끌 수 있음)
+const TRADE_HIDDEN_KEY = 'assetpro.tradeHidden';
+let tradeHidden = new Set();
+try { const v = JSON.parse(localStorage.getItem(TRADE_HIDDEN_KEY) || '[]'); if (Array.isArray(v)) tradeHidden = new Set(v); } catch (_) {}
+function saveTradeHidden() { try { localStorage.setItem(TRADE_HIDDEN_KEY, JSON.stringify([...tradeHidden])); } catch (_) {} }
+function tradeLineOn(code) { return showTrade && !tradeHidden.has(code); }
 
 // 도달 시 매도 비율(%) — 목표(익절)/손절
 const SR_KEY = 'assetpro.sellRatios';
@@ -2231,7 +2248,7 @@ async function loadWatchDetailChart() {
         let ma200ov = null;
         if (Array.isArray(ch.ma200_series) && ch.ma200_series.length === (ch.series || []).length) ma200ov = ch.ma200_series;
         else if (Number.isFinite(Number(ch.ma200))) lines.push({ value: Number(ch.ma200), label: '200일선', kind: 'ma200' });
-        if (showTrade) { const tl = tradeRefLine(ch.last_trade); if (tl) lines.push(tl); }
+        if (tradeLineOn(wlSelected)) { const tl = tradeRefLine(ch.last_trade); if (tl) lines.push(tl); }
         const valrow = `<div class="hc-valrow"><span class="hc-val">${money(ch.value, cur)}</span>
             <span class="hc-chg ${up ? 'positive' : 'negative'}">${up ? '▲' : '▼'} ${pct(ch.change_pct)}</span></div>`;
         box.innerHTML = valrow + chartBlock(ch.series, ch.times, up, curUnit(cur), true, lines, [], ma200ov);

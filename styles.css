@@ -1756,3 +1756,20 @@ header {
 }
 .hc-trade.buy { color: var(--positive); background: rgba(34, 210, 127, 0.14); }
 .hc-trade.sell { color: var(--negative); background: rgba(239, 106, 106, 0.14); }
+
+/* 종목별 매수·매도 선 토글 버튼(차트 카드 헤더) */
+.hc-tlbtn {
+    background: rgba(148,163,184,0.1);
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.64rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.hc-tlbtn.on { background: rgba(90,160,255,0.18); border-color: transparent; color: #5aa0ff; }
+.hc-tlbtn.off { opacity: 0.6; text-decoration: line-through; }
+.hc-tlbtn:hover { color: var(--text-main); }
+.hc-card .hc-del { margin-left: 0.3rem; }
