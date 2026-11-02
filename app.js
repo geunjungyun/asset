@@ -429,7 +429,7 @@ function buildChartCard(ch, isWatch) {
             <span class="hc-name">${ch.name || ch.code}</span>
             <span class="hc-code">${ch.code}</span>
             ${hasTrade && showTrade ? `<button class="hc-tlbtn ${tradeOn ? 'on' : 'off'}" data-tl="${ch.code}" title="이 종목 매수·매도 선 표시/숨김">매매선</button>` : ''}
-            ${isWatch ? `<button class="hc-del" title="관심종목에서 제거" data-code="${ch.code}">&times;</button>` : ''}
+            ${isWatch ? `<button class="hc-del" title="주관심종목에서 제거" data-code="${ch.code}">&times;</button>` : ''}
         </div>
         <div class="hc-valrow">
             <span class="hc-val">${money(ch.value, cur)}</span>
