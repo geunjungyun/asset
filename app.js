@@ -2543,8 +2543,8 @@ function pnlRow(s) {
         ? `<div class="${_sc(s.real)}">${_ps(s.real, cur)}</div>`
           + (s.real_pct != null ? `<div class="lg-sub">${_pp(s.real_pct)}</div>` : '')
         : '<span class="lg-sub">—</span>';
-    const totalCell = `<div class="${_sc(s.total_krw)}">${_ps(s.total_krw, 'KRW')}</div>`
-        + (cur === 'USD' ? `<div class="lg-sub">${_ps(s.total, cur)}</div>` : '');
+    // 총수익은 각 종목의 통화 기준(미국 $, 국내 ₩). 환차 환산 없음.
+    const totalCell = `<div class="${_sc(s.total)}">${_ps(s.total, cur)}</div>`;
     const hasDetail = (s.real_detail || []).length > 0;
     const chev = hasDetail ? '<i class="fa-solid fa-chevron-right pnl-chev"></i> ' : '';
     const detailRow = hasDetail
@@ -2570,6 +2570,7 @@ function pnlDetail(s) {
         return `<div class="pd-summary">매수원가 ${_pm(x.buy_amt, 'KRW')} · 매도금액 ${_pm(x.sell_amt, 'KRW')} `
             + `· 세금 ${_pm(x.tax, 'KRW')} · 실현 <span class="${_sc(x.rlzt)}">${_ps(x.rlzt, 'KRW')}</span></div>`;
     }
+    // 해외는 달러 보유 기준 — 환차손익/원화 환산 없이 USD로만 표시.
     const rows = d.map(x => {
         const md = x.date && x.date.length === 8 ? `${x.date.slice(4, 6)}-${x.date.slice(6, 8)}` : (x.date || '');
         return `<tr>
@@ -2577,15 +2578,13 @@ function pnlDetail(s) {
             <td class="num">${_fmtInt(x.qty)}</td>
             <td class="num">$${(Number(x.sell_px) || 0).toFixed(2)}</td>
             <td class="num">$${(Number(x.avg_px) || 0).toFixed(2)}</td>
-            <td class="num ${_sc(x.deal_pl)}">${_ps(x.deal_pl, 'KRW')}</td>
-            <td class="num ${_sc(x.fx_pl)}">${_ps(x.fx_pl, 'KRW')}</td>
             <td class="num">$${(Number(x.fee) || 0).toFixed(2)}</td>
-            <td class="num ${_sc(x.rlzt)}">${_ps(x.rlzt, 'KRW')}</td>
+            <td class="num ${_sc(x.rlzt_usd)}">${_ps(x.rlzt_usd, 'USD')}</td>
         </tr>`;
     }).join('');
     return `<table class="pd-table"><thead><tr>
         <th>매도일</th><th class="num">수량</th><th class="num">매도가</th><th class="num">평단</th>
-        <th class="num">매매손익</th><th class="num">환차손익</th><th class="num">수수료</th><th class="num">실현</th>
+        <th class="num">수수료</th><th class="num">실현</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -2608,11 +2607,25 @@ function initPnlControls() {
 function renderPnlSummary(d) {
     const el = document.getElementById('pnl-summary');
     if (!el) return;
-    const t = d.summary || {};
+    // 통화별 합산: 미국은 USD, 국내는 KRW (환차 환산 없음).
+    let usReal = 0, usUnreal = 0, krReal = 0, krUnreal = 0;
+    for (const s of (d.symbols || [])) {
+        if (s.market === 'overseas') { usReal += Number(s.real) || 0; usUnreal += Number(s.unreal) || 0; }
+        else { krReal += Number(s.real) || 0; krUnreal += Number(s.unreal) || 0; }
+    }
+    const usTotal = usReal + usUnreal, krTotal = krReal + krUnreal;
+    const fx = Number(d.fx) || 0;
+    const combined = Math.round(krTotal + usTotal * fx);   // 참고용 원화 환산 합계
     el.innerHTML =
-        `<div class="lsum-card big"><div class="lsum-label">총수익 (실현 + 미실현)</div>`
-        + `<div class="lsum-val ${_sc(t.total_krw)}">${_ps(t.total_krw, 'KRW')}</div>`
-        + `<div class="lsum-note">개설시점 누적 · 고시환율 ₩${_fmtInt(d.fx)} · ${d.as_of || ''}</div></div>`;
+        `<div class="lsum-card big"><div class="lsum-label">미국 총수익 (USD · 실현+미실현)</div>`
+        + `<div class="lsum-val ${_sc(usTotal)}">${_ps(usTotal, 'USD')}</div>`
+        + `<div class="lsum-note">실현 ${_ps(usReal, 'USD')} · 미실현 ${_ps(usUnreal, 'USD')}</div></div>`
+        + `<div class="lsum-card big"><div class="lsum-label">국내 총수익 (KRW · 실현+미실현)</div>`
+        + `<div class="lsum-val ${_sc(krTotal)}">${_ps(krTotal, 'KRW')}</div>`
+        + `<div class="lsum-note">실현 ${_ps(krReal, 'KRW')} · 미실현 ${_ps(krUnreal, 'KRW')}</div></div>`
+        + `<div class="lsum-card"><div class="lsum-label">합계 (참고 · 원화 환산)</div>`
+        + `<div class="lsum-val ${_sc(combined)}">${_ps(combined, 'KRW')}</div>`
+        + `<div class="lsum-note">고시환율 ₩${_fmtInt(fx)} · ${d.as_of || ''}</div></div>`;
 }
 
 // 포트폴리오 평가금액 비중 도넛 (보유 종목만, 원화 환산 기준)
@@ -2716,7 +2729,7 @@ async function loadPnl() {
         const t = d.summary || {};
         const tf = document.getElementById('pnl-tfoot');
         if (tf) tf.innerHTML = `<tr class="pnl-total-row">
-            <td>합계</td><td class="num"></td><td class="num"></td><td class="num"></td>
+            <td>합계 (₩환산)</td><td class="num"></td><td class="num"></td><td class="num"></td>
             <td class="num ${_sc(t.unreal_krw)}">${_ps(t.unreal_krw, 'KRW')}</td>
             <td class="num ${_sc(t.real_krw)}">${_ps(t.real_krw, 'KRW')}</td>
             <td class="num ${_sc(t.total_krw)}">${_ps(t.total_krw, 'KRW')}</td><td></td></tr>`;
