@@ -227,14 +227,6 @@ async def candles_stats() -> dict:
     return candle_store.stats()
 
 
-@app.get("/api/debug/overseas-cash")
-async def debug_overseas_cash() -> JSONResponse:
-    """임시 진단: 해외 외화예수금 원시 응답(필드 확인용)."""
-    try:
-        body = await meritz_client._get(meritz_client.CURRENCIES_PATH)
-    except Exception as e:  # noqa: BLE001
-        return JSONResponse({"error": str(e)}, status_code=500)
-    return JSONResponse(body)
 
 
 # --------------------------------------------------------------------------- #

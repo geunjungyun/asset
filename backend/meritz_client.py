@@ -210,13 +210,14 @@ async def get_balance() -> dict:
             "currency": currency,
         })
 
-    # 외화예수금(해당 통화의 현재 예수금 frcr_amt 합)
+    # 외화예수금: estm_frcr_amt(미결제 정산분 포함 추정 예수금, 앱의 '달러 현금'과 일치)를 우선.
+    # frcr_amt(정산완료분)만 쓰면 최근 매도분이 T+2 정산 중일 때 현금이 크게 누락된다.
     cash = 0.0
     try:
         cur_body = await _get(CURRENCIES_PATH)
         for c in cur_body.get("data", []):
             if (c.get("crcd") or "") == currency:
-                cash += _to_float(c.get("frcr_amt"))
+                cash += _to_float(c.get("estm_frcr_amt")) or _to_float(c.get("frcr_amt"))
     except MeritzError:
         cash = 0.0  # 예수금 조회 실패는 치명적이지 않음(잔고는 유지)
 
