@@ -78,6 +78,47 @@ function updateKrwLines() {
     set('sum-pnl-krw', s.eval_pnl, true);
     updatePnlKrw();
     if (typeof holdingsList !== 'undefined' && holdingsList.length) renderHoldingsPie(holdingsList);
+    updateHeaderAssets();   // 헤더 총자산/예수금/평가는 해외+국내 합산으로 덮어씀
+}
+
+// 국내 계좌 요약(원화) — 헤더 합산용
+let domesticSummary = null;
+
+// 헤더(총자산/예수금/주식평가금액)를 해외(USD)+국내(KRW) 합산으로 표시.
+// 메인은 계좌 통화(USD)로, ≈₩ 서브는 원화로. 국내는 환율로 환산해 더한다.
+function updateHeaderAssets() {
+    const ov = lastAccountSummary;
+    if (!ov) return;
+    const fx = usdKrwRate || 1380;
+    const dm = domesticSummary;
+    const dmUsd = (k) => dm ? (Number(dm[k]) || 0) / fx : 0;
+    const totalUsd = (Number(ov.total_asset) || 0) + dmUsd('total_asset');
+    const cashUsd = (Number(ov.cash) || 0) + dmUsd('cash');
+    const evalUsd = (Number(ov.invest_eval) || 0) + dmUsd('invest_eval');
+    const pnlUsd = (Number(ov.eval_pnl) || 0) + dmUsd('eval_pnl');
+    const purUsd = (Number(ov.purchase_amount) || 0) + dmUsd('purchase_amount');
+
+    const setMain = (id, usd) => { const el = document.getElementById(id); if (el) el.textContent = money(usd); };
+    setMain('total-asset', totalUsd);
+    setMain('cash-asset', cashUsd);
+    setMain('invest-asset', evalUsd);
+
+    const setKrw = (id, usd) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = (accountCurrency === 'USD')
+            ? ('≈ ₩' + Math.round((Number(usd) || 0) * fx).toLocaleString('ko-KR')) : '';
+    };
+    setKrw('total-asset-krw', totalUsd);
+    setKrw('cash-asset-krw', cashUsd);
+    setKrw('invest-asset-krw', evalUsd);
+
+    const trend = document.getElementById('invest-trend');
+    if (trend) {
+        const rate = purUsd ? (pnlUsd / purUsd * 100) : 0;
+        const up = rate >= 0;
+        trend.className = 'trend ' + (up ? 'positive' : 'negative');
+        trend.innerHTML = `<i class="fa-solid fa-arrow-trend-${up ? 'up' : 'down'}"></i> ${pct(rate)}`;
+    }
 }
 
 // 보유종목 표: 평가손익(USD) 옆/아래 원화 병기
@@ -197,6 +238,8 @@ function renderDomestic(d) {
     if (!block || !body) return;
     const hold = (d && d.holdings) || [];
     domesticList = hold;   // 차트에서 평단/수익률 조회용
+    domesticSummary = (d && d.summary) || null;  // 헤더 합산용(보유 없어도 예수금 반영)
+    updateHeaderAssets();
     if (!hold.length) { block.hidden = true; return; }
     body.innerHTML = '';
     hold.forEach(h => {
