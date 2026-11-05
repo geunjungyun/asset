@@ -480,10 +480,10 @@ function buildChartCard(ch, isWatch) {
     const card = document.createElement('div');
     card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
     card.dataset.code = ch.code;
-    if (!isWatch) card.draggable = true;   // 보유종목만 드래그로 순서 변경
+    card.draggable = true;   // 보유·주관심 모두 드래그로 순서 변경
     card.innerHTML = `
         <div class="hc-top">
-            ${!isWatch ? '<span class="hc-drag" title="끌어서 순서 변경">⠿</span>' : ''}
+            <span class="hc-drag" title="끌어서 순서 변경">⠿</span>
             <span class="hc-name">${ch.name || ch.code}</span>
             <span class="hc-code">${ch.code}</span>
             ${hasTrade && showTrade ? `<button class="hc-tlbtn ${tradeOn ? 'on' : 'off'}" data-tl="${ch.code}" title="이 종목 매수·매도 선 표시/숨김">매매선</button>` : ''}
@@ -510,7 +510,7 @@ function buildChartCard(ch, isWatch) {
     return card;
 }
 
-// 보유종목 차트 드래그 정렬 — 카드를 끌어 순서를 바꾸고 로컬에 저장.
+// 차트 드래그 정렬 — 보유·주관심 카드를 끌어 순서를 바꾸고 로컬에 저장(섞어 배치 가능).
 let _dragCode = null;
 function initChartDnd(grid) {
     if (grid._dndInit) return;
@@ -519,7 +519,7 @@ function initChartDnd(grid) {
         .forEach(el => el.classList.remove('hc-dropbefore', 'hc-dropafter'));
 
     grid.addEventListener('dragstart', e => {
-        const card = e.target.closest('.hc-card:not(.hc-watch)');
+        const card = e.target.closest('.hc-card');
         if (!card) return;
         _dragCode = card.dataset.code;
         card.classList.add('dragging');
@@ -532,7 +532,7 @@ function initChartDnd(grid) {
         _dragCode = null;
     });
     grid.addEventListener('dragover', e => {
-        const target = e.target.closest('.hc-card:not(.hc-watch)');
+        const target = e.target.closest('.hc-card');
         if (!_dragCode || !target || target.dataset.code === _dragCode) return;
         e.preventDefault();
         const r = target.getBoundingClientRect();
@@ -541,7 +541,7 @@ function initChartDnd(grid) {
         target.classList.add(after ? 'hc-dropafter' : 'hc-dropbefore');
     });
     grid.addEventListener('drop', e => {
-        const target = e.target.closest('.hc-card:not(.hc-watch)');
+        const target = e.target.closest('.hc-card');
         if (!_dragCode || !target) return;
         e.preventDefault();
         const dragged = grid.querySelector(`.hc-card[data-code="${CSS.escape(_dragCode)}"]`);
@@ -550,12 +550,29 @@ function initChartDnd(grid) {
         const r = target.getBoundingClientRect();
         const after = (e.clientY - r.top) > r.height / 2;
         if (after) target.after(dragged); else target.before(dragged);
-        const codes = [...grid.querySelectorAll('.hc-card:not(.hc-watch)')]
+        // 보유·주관심 전체 카드 순서를 저장
+        const codes = [...grid.querySelectorAll('.hc-card')]
             .map(c => c.dataset.code).filter(Boolean);
         saveHeldOrder(codes);
         // 보유종목 테이블도 같은 순서로 맞춤(데이터가 있으면)
         if (typeof holdingsList !== 'undefined' && holdingsList && holdingsList.length)
             renderHoldings(holdingsList.slice());
+    });
+}
+
+// 그리드용 통합 정렬: 저장된 사용자 순서가 우선, 미지정은 보유(기본순)→주관심 순.
+function sortCardsForGrid(charts) {
+    const ord = loadHeldOrder();
+    const key = ch => {
+        const ci = ord.indexOf(ch.code);
+        if (ci >= 0) return [0, ci];
+        if (ch.kind === 'watch') return [2, 0];
+        const hi = HOLDING_ORDER.indexOf(ch.code);
+        return [1, hi < 0 ? 999 : hi];
+    };
+    return (charts || []).slice().sort((a, b) => {
+        const ka = key(a), kb = key(b);
+        return ka[0] - kb[0] || ka[1] - kb[1];
     });
 }
 
@@ -572,20 +589,16 @@ function renderHoldingsChartsGrid(d) {
     grid.classList.remove('cmb-mode');
 
     const all = d.charts || [];
-    const heldCharts = all.filter(ch => ch.kind !== 'watch');
-    const watchCharts = all.filter(ch => ch.kind === 'watch');
     grid.innerHTML = '';
-
-    sortByHoldingOrder(heldCharts, ch => ch.code).forEach(ch => grid.appendChild(buildChartCard(ch, false)));
-    if (!heldCharts.length) {
+    if (!all.length) {
         const row = document.createElement('div');
         row.className = 'loading-row';
-        row.textContent = '보유 종목이 없습니다.';
+        row.textContent = '표시할 종목이 없습니다.';
         grid.appendChild(row);
+        return;
     }
-
-    // 관심종목은 ★배지 카드로 구분(별도 구분줄 없이 보유종목 뒤에 이어 배치)
-    watchCharts.forEach(ch => grid.appendChild(buildChartCard(ch, true)));
+    // 보유·주관심을 하나의 사용자 지정 순서로 섞어 배치(관심종목은 ★배지로 구분).
+    sortCardsForGrid(all).forEach(ch => grid.appendChild(buildChartCard(ch, ch.kind === 'watch')));
 }
 
 // 시계열을 기준값 대비 수익률 %로 정규화. 겹쳐 비교하기 위함.
@@ -605,11 +618,9 @@ function renderCombinedChart(d) {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid) return;
 
-    // 보유종목 먼저(보유 순서), 관심종목 뒤 — 색상 배정 안정화
+    // 사용자가 지정한 통합 순서를 따름(미지정은 보유→관심) — 카드 그리드와 일치
     const raw = d.charts || [];
-    const held = sortByHoldingOrder(raw.filter(ch => ch.kind !== 'watch'), ch => ch.code);
-    const watch = raw.filter(ch => ch.kind === 'watch');
-    const ordered = held.concat(watch);
+    const ordered = sortCardsForGrid(raw);
 
     // 장중(1h~1D)은 전일 종가(prev_close)를 0% 기준으로 → "현재 %"가 카드 금일 등락율과 일치.
     // 멀티데이/주봉 등 prev_close가 없는 기간은 기간 시작(첫 봉) 기준 유지.
