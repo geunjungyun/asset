@@ -180,14 +180,26 @@ function renderAccount(data) {
 let holdingsList = [];
 let domesticList = [];   // 국내주식(원화) 보유목록 — 차트 평단/수익률 조회용
 
-// 보유종목 표시 순서(고정). 목록에 없는 코드는 뒤로.
+// 보유종목 표시 순서. 기본값(고정) + 사용자가 드래그로 바꾼 순서(브라우저 저장) 우선.
 const HOLDING_ORDER = ['SNDK', 'MU', 'MRVL', 'AMD', 'GOOGL', 'NVDA', 'AMGN', 'LLY', '000660'];
-function holdingOrderIdx(code) {
-    const i = HOLDING_ORDER.indexOf(code);
-    return i < 0 ? 999 : i;
+const HELD_ORDER_KEY = 'heldChartOrder';
+function loadHeldOrder() {
+    try { const v = JSON.parse(localStorage.getItem(HELD_ORDER_KEY)); return Array.isArray(v) ? v : []; }
+    catch (e) { return []; }
+}
+function saveHeldOrder(codes) {
+    try { localStorage.setItem(HELD_ORDER_KEY, JSON.stringify(codes || [])); } catch (e) { /* noop */ }
+}
+// 유효 순서: 사용자가 저장한 커스텀 순서를 앞에, 거기 없는 코드는 기본 순서로 뒤에.
+function effectiveHoldingOrder() {
+    const custom = loadHeldOrder();
+    const seen = new Set(custom);
+    return custom.concat(HOLDING_ORDER.filter(c => !seen.has(c)));
 }
 function sortByHoldingOrder(arr, getCode) {
-    return (arr || []).slice().sort((a, b) => holdingOrderIdx(getCode(a)) - holdingOrderIdx(getCode(b)));
+    const ord = effectiveHoldingOrder();
+    const idx = c => { const i = ord.indexOf(c); return i < 0 ? 999 : i; };
+    return (arr || []).slice().sort((a, b) => idx(getCode(a)) - idx(getCode(b)));
 }
 
 function renderHoldings(holdings) {
@@ -467,8 +479,11 @@ function buildChartCard(ch, isWatch) {
     const hasTrade = !!(ch.last_trade && Number(ch.last_trade.price) > 0);
     const card = document.createElement('div');
     card.className = 'hc-card' + (isWatch ? ' hc-watch' : '');
+    card.dataset.code = ch.code;
+    if (!isWatch) card.draggable = true;   // 보유종목만 드래그로 순서 변경
     card.innerHTML = `
         <div class="hc-top">
+            ${!isWatch ? '<span class="hc-drag" title="끌어서 순서 변경">⠿</span>' : ''}
             <span class="hc-name">${ch.name || ch.code}</span>
             <span class="hc-code">${ch.code}</span>
             ${hasTrade && showTrade ? `<button class="hc-tlbtn ${tradeOn ? 'on' : 'off'}" data-tl="${ch.code}" title="이 종목 매수·매도 선 표시/숨김">매매선</button>` : ''}
@@ -495,9 +510,59 @@ function buildChartCard(ch, isWatch) {
     return card;
 }
 
+// 보유종목 차트 드래그 정렬 — 카드를 끌어 순서를 바꾸고 로컬에 저장.
+let _dragCode = null;
+function initChartDnd(grid) {
+    if (grid._dndInit) return;
+    grid._dndInit = true;
+    const clearHints = () => grid.querySelectorAll('.hc-dropbefore, .hc-dropafter')
+        .forEach(el => el.classList.remove('hc-dropbefore', 'hc-dropafter'));
+
+    grid.addEventListener('dragstart', e => {
+        const card = e.target.closest('.hc-card:not(.hc-watch)');
+        if (!card) return;
+        _dragCode = card.dataset.code;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', _dragCode); } catch (err) { /* noop */ }
+    });
+    grid.addEventListener('dragend', () => {
+        grid.querySelectorAll('.hc-card.dragging').forEach(c => c.classList.remove('dragging'));
+        clearHints();
+        _dragCode = null;
+    });
+    grid.addEventListener('dragover', e => {
+        const target = e.target.closest('.hc-card:not(.hc-watch)');
+        if (!_dragCode || !target || target.dataset.code === _dragCode) return;
+        e.preventDefault();
+        const r = target.getBoundingClientRect();
+        const after = (e.clientY - r.top) > r.height / 2;
+        clearHints();
+        target.classList.add(after ? 'hc-dropafter' : 'hc-dropbefore');
+    });
+    grid.addEventListener('drop', e => {
+        const target = e.target.closest('.hc-card:not(.hc-watch)');
+        if (!_dragCode || !target) return;
+        e.preventDefault();
+        const dragged = grid.querySelector(`.hc-card[data-code="${CSS.escape(_dragCode)}"]`);
+        clearHints();
+        if (!dragged || dragged === target) return;
+        const r = target.getBoundingClientRect();
+        const after = (e.clientY - r.top) > r.height / 2;
+        if (after) target.after(dragged); else target.before(dragged);
+        const codes = [...grid.querySelectorAll('.hc-card:not(.hc-watch)')]
+            .map(c => c.dataset.code).filter(Boolean);
+        saveHeldOrder(codes);
+        // 보유종목 테이블도 같은 순서로 맞춤(데이터가 있으면)
+        if (typeof holdingsList !== 'undefined' && holdingsList && holdingsList.length)
+            renderHoldings(holdingsList.slice());
+    });
+}
+
 function renderHoldingsChartsGrid(d) {
     const grid = document.getElementById('holdings-charts-grid');
     if (!grid || !d) return;
+    initChartDnd(grid);
 
     if (holdingChartMode === 'combined') {
         grid.classList.add('cmb-mode');

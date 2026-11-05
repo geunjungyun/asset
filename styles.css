@@ -873,6 +873,12 @@ header {
     transition: border-color 0.2s ease;
 }
 .hc-card:hover { border-color: rgba(59,130,246,0.35); }
+.hc-card[draggable="true"] { cursor: grab; }
+.hc-card.dragging { opacity: 0.4; cursor: grabbing; }
+.hc-card.hc-dropbefore { box-shadow: -3px 0 0 0 var(--accent, #3b82f6); }
+.hc-card.hc-dropafter { box-shadow: 3px 0 0 0 var(--accent, #3b82f6); }
+.hc-drag { flex: 0 0 auto; color: var(--text-muted, #94a3b8); font-size: 0.85rem; line-height: 1; cursor: grab; opacity: 0.5; user-select: none; }
+.hc-card:hover .hc-drag { opacity: 0.9; }
 .hc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; }
 .hc-name { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hc-code { font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0; }
