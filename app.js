@@ -1960,27 +1960,66 @@ function _rsCell(v) {
     return `<td class="num ${(Number(v) || 0) >= 0 ? 'pos' : 'neg'}">${v == null ? '-' : (v >= 0 ? '+' : '') + v}</td>`;
 }
 
+// 계층 표 접기/펴기 상태 — 섹터 key / 산업 key(섹터key|산업명)
+const tblSecOpen = new Set();
+const tblIndOpen = new Set();
+let tblTreeInit = false;
+
+// 산업(하위분류) 집계: 소속 종목 지표 평균
+function _indAgg(ind) {
+    const ss = (ind.stocks || []).filter(t => !t.no_data && 'score' in t);
+    const mean = f => {
+        const a = ss.map(f).filter(v => v != null && Number.isFinite(v));
+        return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+    };
+    const per = {};
+    (boardData.all_periods || []).forEach(p => { per[p] = mean(t => Number((t.periods || {})[p])); });
+    return { n: ss.length, periods: per, accel: mean(t => Number(t.accel)), rs: mean(t => Number(t.rs)), drank: mean(t => Number(t.drank)) };
+}
+function _tpcA(v) {   // 집계 등락률 셀(값 없으면 –)
+    if (v == null || !Number.isFinite(v)) return '<td class="num">–</td>';
+    return `<td class="num ${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}</td>`;
+}
+function _agNum(v) { return (v == null || !Number.isFinite(v)) ? '–' : (v >= 0 ? '+' : '') + v.toFixed(1); }
+function _rsCellA(v) {
+    if (v == null || !Number.isFinite(v)) return '<td class="num">–</td>';
+    return `<td class="num ${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}</td>`;
+}
+
 function renderSectorTable() {
     const box = document.getElementById('sector-momentum');
     if (!box || !boardData) return;
     const order = boardData.all_periods || Object.keys(PERIOD_LABEL);
     const cols = tablePeriods.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
     const span = cols.length + 6;
-    const head = `<tr><th>섹터 / 종목</th>${cols.map(p => `<th class="num">${PERIOD_LABEL[p] || p}</th>`).join('')}`
-        + `<th class="num">가속</th><th class="num">시장대비</th><th class="num">Δ순위</th><th class="c">상태</th><th>추이</th></tr>`;
     const sectors = [...(boardData.sectors || [])].sort((a, b) => (a.rank || 99) - (b.rank || 99));
+    if (!tblTreeInit) { sectors.forEach(s => tblSecOpen.add(s.key)); tblTreeInit = true; }  // 최초: 섹터 펼침, 산업 접힘
+    const head = `<tr><th>섹터 / 하위분류 / 종목</th>${cols.map(p => `<th class="num">${PERIOD_LABEL[p] || p}</th>`).join('')}`
+        + `<th class="num">가속</th><th class="num">시장대비</th><th class="num">Δ순위</th><th class="c">상태</th><th>추이</th></tr>`;
     let body = '';
     for (const s of sectors) {
         const sg = s.sig || {};
-        body += `<tr class="tbl-sec"><td><b>#${s.rank || '-'} ${s.name}</b> ${_drankBadge(s.drank)}</td>`
+        const sOpen = tblSecOpen.has(s.key);
+        body += `<tr class="tbl-sec tree-row" data-key="${s.key}"><td><span class="tree-ar">${sOpen ? '▾' : '▸'}</span><b>#${s.rank || '-'} ${s.name}</b> ${_drankBadge(s.drank)}</td>`
             + cols.map(p => _tpc((sg.periods || {})[p])).join('')
             + `<td class="num">${(sg.accel >= 0 ? '+' : '') + (sg.accel ?? 0)}</td>`
             + _rsCell(sg.rs)
             + `<td class="num">${_drankBadge(s.drank) || '–'}</td>`
             + `<td class="c">${_stateBadge(sg.state)}</td>`
             + `<td>${_stripCells(sg.periods)}</td></tr>`;
+        if (!sOpen) continue;
         for (const ind of s.industries) {
-            body += `<tr class="tbl-ind"><td colspan="${span}">${ind.name}</td></tr>`;
+            const ik = s.key + '|' + ind.name;
+            const iOpen = tblIndOpen.has(ik);
+            const ag = _indAgg(ind);
+            body += `<tr class="tbl-ind tree-row" data-ik="${ik}"><td><span class="tree-ar">${iOpen ? '▾' : '▸'}</span>${ind.name} <span class="ind-n">(${ag.n})</span></td>`
+                + cols.map(p => _tpcA(ag.periods[p])).join('')
+                + `<td class="num">${_agNum(ag.accel)}</td>`
+                + _rsCellA(ag.rs)
+                + `<td class="num">${_agNum(ag.drank)}</td>`
+                + `<td class="c"></td>`
+                + `<td>${_stripCells(ag.periods)}</td></tr>`;
+            if (!iOpen) continue;
             for (const t of ind.stocks) {
                 if (t.no_data) {
                     body += `<tr class="tbl-stk"><td class="stk-name">${t.held ? '● ' : ''}${t.code}</td>`
@@ -2001,7 +2040,8 @@ function renderSectorTable() {
     // 주기 갱신으로 재렌더돼도 스크롤이 맨 위로 튀지 않게 위치 보존
     const prevWrap = box.querySelector('.tbl-board-wrap');
     const prevScroll = prevWrap ? prevWrap.scrollTop : 0;
-    box.innerHTML = `<div class="tbl-board-wrap"><table class="tbl-board"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+    const tools = `<div class="tree-tools"><button data-act="expand-all">전체 펼치기</button><button data-act="collapse-all">전체 접기</button><span class="tree-tip">행을 눌러 섹터·하위분류·종목을 펼치고 접습니다</span></div>`;
+    box.innerHTML = tools + `<div class="tbl-board-wrap"><table class="tbl-board"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
     if (prevScroll) {
         const w = box.querySelector('.tbl-board-wrap');
         if (w) w.scrollTop = prevScroll;
@@ -2878,9 +2918,34 @@ function initSectorPeriodToggle() {
         renderSectorTable();
     });
 
-    // 모멘텀 섹터 행 펼치기/접기 (이벤트 위임)
+    // 계층 표 펼치기/접기 (이벤트 위임): 전체 버튼 + 섹터/산업 행 + (구)모멘텀 행
     const mom = document.getElementById('sector-momentum');
     if (mom) mom.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]');
+        if (act) {
+            if (act.dataset.act === 'expand-all') {
+                (boardData?.sectors || []).forEach(s => {
+                    tblSecOpen.add(s.key);
+                    (s.industries || []).forEach(ind => tblIndOpen.add(s.key + '|' + ind.name));
+                });
+            } else { tblSecOpen.clear(); tblIndOpen.clear(); }
+            renderSectorTable();
+            return;
+        }
+        const secR = e.target.closest('.tbl-sec');
+        if (secR && secR.dataset.key) {
+            const k = secR.dataset.key;
+            if (tblSecOpen.has(k)) tblSecOpen.delete(k); else tblSecOpen.add(k);
+            renderSectorTable();
+            return;
+        }
+        const indR = e.target.closest('.tbl-ind');
+        if (indR && indR.dataset.ik) {
+            const ik = indR.dataset.ik;
+            if (tblIndOpen.has(ik)) tblIndOpen.delete(ik); else tblIndOpen.add(ik);
+            renderSectorTable();
+            return;
+        }
         const r = e.target.closest('.mom-row');
         if (!r) return;
         const k = r.dataset.key;

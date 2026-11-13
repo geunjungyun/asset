@@ -1616,9 +1616,22 @@ header {
 .tbl-board .pos { color: var(--positive); } .tbl-board .neg { color: var(--negative); }
 .tbl-sec td { border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 6px; }
 .tbl-sec td b { font-size: 0.8rem; }
-.tbl-ind td { color: var(--text-muted); font-size: 0.64rem; padding: 3px 7px 1px 14px; }
-.tbl-stk .stk-name { padding-left: 20px; }
+.tbl-ind td { color: var(--text-muted); font-size: 0.66rem; padding: 3px 7px 1px 14px; }
+.tbl-ind .ind-n { opacity: 0.6; font-size: 0.6rem; }
+.tbl-stk .stk-name { padding-left: 30px; }
 .tbl-stk:hover td { background: rgba(255, 255, 255, 0.03); }
+/* 계층 표: 펼치기/접기 */
+.tree-row { cursor: pointer; }
+.tree-row:hover > td:first-child { color: var(--accent, #3b82f6); }
+.tree-ar { display: inline-block; width: 12px; color: var(--text-muted); font-size: 0.6rem; }
+.tbl-ind .tree-ar { margin-left: 8px; }
+.tree-tools { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
+.tree-tools button {
+    font-size: 0.68rem; padding: 2px 9px; border-radius: 6px; cursor: pointer;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-secondary);
+}
+.tree-tools button:hover { border-color: rgba(59,130,246,0.45); color: var(--text-primary); }
+.tree-tip { font-size: 0.62rem; color: var(--text-muted); margin-left: 0.2rem; }
 .st-badge { font-size: 0.6rem; padding: 1px 6px; border-radius: 3px; }
 .st-badge.hc-g { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
 .st-badge.hc-o { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
